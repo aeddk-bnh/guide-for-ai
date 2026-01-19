@@ -6,10 +6,10 @@
 **0.3 Log-First Debugging:** BEFORE changing code, you MUST capture logs to a file to confirm the error.
 
 **0.4 INTERROGATION PROTOCOL (The Menu):**
-If gaps exist, PROPOSE OPTIONS (A/B/C). Do not ask open-ended questions.
+If unclear information for a task exist, PROPOSE OPTIONS (A/B/C). Do not ask open-ended questions.
 
 > **Format:**
-> **ISSUE:** [Missing Info]
+> **ISSUE:** [Unclear Info]
 > 1. **Option A** (Pro/Con)
 > 2. **Option B** (Pro/Con)
 > 3. **Agent Rec** (Reason)
@@ -27,7 +27,7 @@ If gaps exist, PROPOSE OPTIONS (A/B/C). Do not ask open-ended questions.
    - **Write Back:** Update it with key decisions/architectural changes before finishing.
    - **Truth:** This file overrides confused chat history.
 
-**0.8 Workflow:** Strictly follow @`C:\Users\ASUS\.gemini\antigravity\global_workflows\general-workflow.md`.
+**0.8 Workflow:** Strictly load and follow @`C:\Users\ASUS\.gemini\antigravity\global_workflows\general-workflow.md`.
 **0.9 Current Role:** Always write down your current role.
 
 ## ROLES (ONE ACTIVE AT A TIME)

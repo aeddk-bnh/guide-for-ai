@@ -1,6 +1,6 @@
 ---
 name: brainstorm
-description: MANDATORY FIRST STEP. Triggers structured thinking for ALL tasks: Coding, Debugging, Architecture, or Research. Forces Role definition and Risk Analysis. Use this BEFORE any other tool.
+description: Structured thinking for ALL tasks: Coding, Debugging, Architecture, or Research.
 ---
 
 # Brainstorming & Analysis Protocol

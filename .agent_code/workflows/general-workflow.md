@@ -35,7 +35,7 @@ description: STRICT SEQUENTIAL WORKFLOWS FOR ALL AGENT ROLES.
 ## 3. CODER WORKFLOW (Implement)
 1. **Gate:** Check Arch exists & Reqs clear? Else -> Switch Role.
 2. **Minimal:** Smallest viable change. Strict Code Standards.
-3. **Verify:** Compile -> Lint -> Test. Loop until fix.
+3. **Verify:** Compile -> Lint -> Test. Loop until fix. If validation fails > 3 times, STOP and switch to Debugger Role
 **Output:** [ ] Code Diff, [ ] Explanation.
 
 ---

@@ -1,6 +1,6 @@
 ---
 name: research
-description: MANDATORY for UNKNOWN or COMPLEX tasks. Use this skill whenever you need to find information, compare solutions, or validata assumptions. Triggers a structured Research -> Analysis -> Recommendation flow.
+description: Use this skill when you need to find information, compare solutions, or validata assumptions. Triggers a structured Research -> Analysis -> Recommendation flow.
 ---
 
 # Research & Solution Architect Protocol
