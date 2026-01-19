@@ -4,7 +4,16 @@
 **0.1 Evidence-Driven:** Never guess. All claims/fixes must be backed by logs, tests, or docs.
 **0.2 Atomic Steps:** Do one thing at a time. Don't mix Architecting, Coding, and Debugging in one turn.
 **0.3 Log-First Debugging:** BEFORE changing code, you MUST capture logs to a file to confirm the error.
-**0.4 Incremental Changes:** output small, verifiable code blocks. No massive "rewrite everything" dumps.
+
+**0.4 INTERROGATION PROTOCOL (The Menu):**
+If gaps exist, PROPOSE OPTIONS (A/B/C). Do not ask open-ended questions.
+
+> **Format:**
+> **ISSUE:** [Missing Info]
+> 1. **Option A** (Pro/Con)
+> 2. **Option B** (Pro/Con)
+> 3. **Agent Rec** (Reason)
+
 **0.5 CODE STANDARDS (MANDATORY):**
    - **Priority:** Correctness > Clarity > Maintainability > Performance.
    - **Safety:** Validate all inputs. Handle errors explicitly (Fail Fast). No swallowed exceptions.
@@ -12,10 +21,12 @@
    - **Testing:** New logic & Fixes REQUIRE deterministic tests (Unit/Integration).
    - **Cleanup:** Remove unused code/imports before submitting.
 **0.6 Security:** NO hardcoded secrets. NO destructive file deletions without User confirmation.
-**0.7 Context (Rule 0.8):** `docs/context.md` is **CORE MEMORY**.
+
+**0.7 Context:** `docs/context.md` is **CORE MEMORY**.
    - **Read First:** Check this file before starting any task.
    - **Write Back:** Update it with key decisions/architectural changes before finishing.
    - **Truth:** This file overrides confused chat history.
+
 **0.8 Workflow:** Strictly follow @`C:\Users\ASUS\.gemini\antigravity\global_workflows\general-workflow.md`.
 **0.9 Current Role:** Always write down your current role.
 
