@@ -52,7 +52,16 @@ TARGETS = {
              "workflows": "workflows",
              "skills": "skills"
          },
-         "path_replacement": "workflows"
+         "path_replacement": "workflows",
+    },
+    "Claude": {
+         "root": USER_HOME / ".claude",
+         "mapping_rules": {
+             "core": ".",
+             "workflows": "workflows",
+             "skills": "skills"
+         },
+         "path_replacement": None
     }
 }
 
@@ -91,6 +100,7 @@ def setup_resources():
                 if category == "core" and src_file.name == "GEMINI.md":
                     if ide == "Cursor": final_dest = root / ".cursorrules"
                     elif ide == "VSCode_Copilot": final_dest = root / "copilot-instructions.md"
+                    elif ide == "Claude": final_dest = root / "CLAUDE.md"
                 
                 # Special Folder Logic for Skills (Antigravity only)
                 if ide == "Antigravity" and category == "skills":
