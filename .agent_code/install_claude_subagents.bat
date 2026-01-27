@@ -56,9 +56,23 @@ if /i "!TARGET!"=="opencode-skills" (
     set "ITEM_TYPE=skills"
     goto :execute_install
 )
+if /i "!TARGET!"=="antigravity-agents" (
+    set "SOURCE_DIR=%~dp0subagents"
+    set "TARGET_DIR=%USERPROFILE%\.gemini\antigravity\agents"
+    set "PRODUCT_NAME=Antigravity"
+    set "ITEM_TYPE=agents"
+    goto :execute_install
+)
+if /i "!TARGET!"=="antigravity-skills" (
+    set "SOURCE_DIR=%~dp0skills"
+    set "TARGET_DIR=%USERPROFILE%\.gemini\antigravity\skills"
+    set "PRODUCT_NAME=Antigravity"
+    set "ITEM_TYPE=skills"
+    goto :execute_install
+)
 
 :: If we reach here, the target was invalid
-echo Error: Invalid target '!TARGET!'. Please specify 'claude-agents', 'opencode-agents', 'claude-skills', or 'opencode-skills'.
+echo Error: Invalid target '!TARGET!'. Please specify 'claude-agents', 'opencode-agents', 'claude-skills', 'opencode-skills', 'antigravity-agents' or 'antigravity-skills'.
 call :show_help
 goto :eof
 
@@ -94,7 +108,7 @@ if /i "!ITEM_TYPE!"=="skills" (
         echo Error: robocopy reported a fatal error exit code 8 or higher.
         goto :eof
     )
-    goto :installation_complete
+    goto :post_process
 )
 
 :: For agents, copy individual .md files
@@ -124,6 +138,8 @@ if errorlevel 1 (
     goto :eof
 )
 
+:post_process
+
 :: Post-processing for OpenCode Agents
 if /i "!TARGET!"=="opencode-agents" (
     echo.
@@ -136,7 +152,20 @@ if /i "!TARGET!"=="opencode-agents" (
         echo Please ensure you have Python installed to fix the formatting in '!TARGET_DIR!'.
     ) else (
         REM Run python script to fix formatting in target directory
-        python "%~dp0fix_agent_config.py" "!TARGET_DIR!"
+        python "%~dp0manage_agent_config.py" fix-opencode "!TARGET_DIR!"
+    )
+)
+
+:: Post-processing for Antigravity Skills
+if /i "!TARGET!"=="antigravity-skills" (
+    echo.
+    echo Restructuring skills for Antigravity format...
+    
+    python --version >nul 2>&1
+    if errorlevel 1 (
+        echo Warning: Python is not found. Cannot automatically restructure skills.
+    ) else (
+        python "%~dp0manage_agent_config.py" fix-antigravity-skills "!TARGET_DIR!"
     )
 )
 
@@ -152,6 +181,6 @@ goto :eof
 :: Function to display help
 :show_help
 echo Usage: %~nx0 [-t target]
-echo   -t target : Install target (claude-agents, opencode-agents, claude-skills, opencode-skills). Default is claude-agents.
+echo   -t target : Install target (claude/opencode/antigravity-agents/skills). Default is claude-agents.
 echo   -h, /?    : Show this help message.
 goto :eof
