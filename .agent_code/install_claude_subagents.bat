@@ -70,13 +70,11 @@ echo Source directory: !SOURCE_DIR!
 echo Target directory: !TARGET_DIR!
 echo.
 
-
 :: Check if source directory exists
 if not exist "!SOURCE_DIR!" (
     echo Error: Source directory '!SOURCE_DIR!' not found. Please ensure it exists.
     goto :eof
 )
-
 
 :: Create target directory if it doesn't exist
 if not exist "!TARGET_DIR!" (
@@ -87,7 +85,6 @@ if not exist "!TARGET_DIR!" (
         goto :eof
     )
 )
-
 
 :: For skills, we need to copy the entire subdirectory structure
 if /i "!ITEM_TYPE!"=="skills" (
@@ -100,18 +97,13 @@ if /i "!ITEM_TYPE!"=="skills" (
     goto :installation_complete
 )
 
-
 :: For agents, copy individual .md files
 :: Check if there are any .md files in the target that would be overwritten
-:: Instead of using GOTO inside FOR, we'll run the FOR loop and set a flag.
-:: The FOR loop will iterate fully, but we only care if the flag is set afterwards.
 set "OVERWRITE_NEEDED=false"
-
 for %%f in ("!SOURCE_DIR!\*.md") do (
     if exist "!TARGET_DIR!\%%~nxf" (
         set "OVERWRITE_NEEDED=true"
         REM The loop continues, but we only need to know if ANY file existed.
-        REM We'll check the flag after the loop ends.
     )
 )
 
@@ -130,6 +122,22 @@ xcopy "!SOURCE_DIR!\*.md" "!TARGET_DIR!\" /Y /R /Q /F
 if errorlevel 1 (
     echo Error: Failed to copy !ITEM_TYPE! files.
     goto :eof
+)
+
+:: Post-processing for OpenCode Agents
+if /i "!TARGET!"=="opencode-agents" (
+    echo.
+    echo Modifying agent configurations for OpenCode format...
+    
+    REM Check if Python is available
+    python --version >nul 2>&1
+    if errorlevel 1 (
+        echo Warning: Python is not found. Cannot automatically convert agent configuration format.
+        echo Please ensure you have Python installed to fix the formatting in '!TARGET_DIR!'.
+    ) else (
+        REM Run python script to fix formatting in target directory
+        python "%~dp0fix_agent_config.py" "!TARGET_DIR!"
+    )
 )
 
 :installation_complete
