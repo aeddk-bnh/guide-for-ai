@@ -169,6 +169,19 @@ if /i "!TARGET!"=="antigravity-skills" (
     )
 )
 
+:: Post-processing for continuous-learning-v2 skill
+if exist "!TARGET_DIR!\\continuous-learning-v2" (
+    echo.
+    echo Configuring continuous-learning-v2 skill...
+    
+    python --version >nul 2>&1
+    if errorlevel 1 (
+        echo Warning: Python is not found. Cannot automatically configure the skill.
+    ) else (
+        python "%~dp0manage_agent_config.py" fix-skill-paths "!TARGET_DIR!\\continuous-learning-v2" "!TARGET_DIR!\\.."
+    )
+)
+
 :installation_complete
 echo.
 echo Installation complete!

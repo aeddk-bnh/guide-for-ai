@@ -82,10 +82,47 @@ def fix_antigravity_skills(target_dir):
         except Exception as e:
             print(f"Error moving {filepath}: {e}")
 
+
+def update_skill_paths(skill_dir, target_root_dir):
+    """
+    Updates paths in continuous-learning-v2 skill files based on the target environment.
+    """
+    print(f"Updating paths in {skill_dir} for target: {target_root_dir}")
+    
+    # Determine the correct path prefix based on the target directory
+    target_path_normalized = target_root_dir.replace('\\', '/')
+    
+    # Map Claude Code paths to the target environment path
+    claude_path_literal = "~/.claude"
+    
+    # Process SKILL.md and config.json if they exist
+    for filename in ['SKILL.md', 'config.json']:
+        filepath = os.path.join(skill_dir, filename)
+        if os.path.isfile(filepath):
+            try:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                # Replace literal Claude Code path with target path
+                updated_content = content.replace(claude_path_literal, target_path_normalized)
+                
+                # For Antigravity, also replace forward slashes with backslashes in paths
+                if "antigravity" in target_path_normalized.lower():
+                    updated_content = updated_content.replace('/', '\\')
+                
+                with open(filepath, 'w', encoding='utf-8') as f:
+                    f.write(updated_content)
+                
+                print(f"Updated paths in: {filepath}")
+                    
+            except Exception as e:
+                print(f"Error processing {filepath}: {e}")
+
+
 def main():
     if len(sys.argv) < 3:
         print("Usage: manage_agent_config.py <mode> <directory>")
-        print("Modes: fix-opencode, fix-antigravity-skills")
+        print("Modes: fix-opencode, fix-antigravity-skills, fix-skill-paths")
         return
 
     mode = sys.argv[1]
@@ -104,6 +141,15 @@ def main():
             
     elif mode == "fix-antigravity-skills":
         fix_antigravity_skills(target_dir)
+        
+    elif mode == "fix-skill-paths":
+        # For this mode, we expect a third argument which is the target root directory
+        if len(sys.argv) < 4:
+            print("Usage: manage_agent_config.py fix-skill-paths <skill_directory> <target_root_directory>")
+            return
+        skill_dir = sys.argv[2]
+        target_root_dir = sys.argv[3]
+        update_skill_paths(skill_dir, target_root_dir)
         
     else:
         print(f"Unknown mode: {mode}")
