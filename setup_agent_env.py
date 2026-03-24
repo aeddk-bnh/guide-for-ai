@@ -1,5 +1,5 @@
+import argparse
 import os
-import shutil
 import re
 from pathlib import Path
 
@@ -7,13 +7,6 @@ from pathlib import Path
 # Determine script location to find resources reliably
 SCRIPT_DIR = Path(__file__).parent.resolve()
 SOURCE_DIR = SCRIPT_DIR / ".agent_code" # Resources are in .agent_code subfolder
-
-# Determine Project Root (Assumed to be one level up if script is in .agent_code)
-# Or if script is meant to be run from root, we can handle that.
-# Best bet: The repo root is wherever we want to install .vscode/.cursor
-# We'll assume the user runs this script FROM the project root or the script knows it's in a subdir.
-# Let's assume script is in `project/.agent_code/script.py` -> project root is `..`
-PROJECT_ROOT = SCRIPT_DIR.parent 
 
 # --- IDE TARGET PATHS ---
 USER_HOME = Path(os.path.expanduser("~"))
@@ -24,60 +17,114 @@ ORIGINAL_REF_PATH = r"c:\Users\ASUS\.gemini\antigravity\global_workflows\general
 # The absolute path we want to get rid of
 ABSOLUTE_PATH_PREFIX = r"c:\Users\ASUS\.gemini\antigravity"
 ABSOLUTE_PATH_PREFIX_FWD = "c:/Users/ASUS/.gemini/antigravity"
-
-TARGETS = {
-    "Antigravity": {
-        "root": USER_HOME / ".gemini",
-        "mapping_rules": {
-            "core": "",  
-            "workflows": "antigravity/global_workflows",
-            "skills": "antigravity/skills" 
-        },
-        "path_replacement": None # No replacement needed, native env
-    },
-    "Cursor": {
-        "root": PROJECT_ROOT,
-        "mapping_rules": {
-            "core": ".", 
-            "workflows": ".cursor/workflows",
-            "skills": ".cursor/skills"
-        },
-        # Replace absolute path with local .cursor path
-        "path_replacement": ".cursor" 
-    },
-    "VSCode_Copilot": {
-         "root": PROJECT_ROOT / ".vscode",
-         "mapping_rules": {
-             "core": ".", 
-             "workflows": "workflows",
-             "skills": "skills"
-         },
-         "path_replacement": "workflows",
-    },
-    "Claude": {
-         "root": USER_HOME / ".claude",
-         "mapping_rules": {
-             "core": ".",
-             "workflows": "workflows",
-             "skills": "skills"
-         },
-         "path_replacement": None
-    }
+ALL_CLASSIC_TARGETS = ("cursor", "vscode", "claude", "antigravity")
+TARGET_NAME_MAP = {
+    "Cursor": "cursor",
+    "VSCode_Copilot": "vscode",
+    "Claude": "claude",
+    "Antigravity": "antigravity",
 }
 
-def setup_resources():
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Install classic IDE assets from guide-for-ai."
+    )
+    parser.add_argument(
+        "--project-root",
+        help=(
+            "Target project root for Cursor and VS Code Copilot installs. Defaults "
+            "to this repository root."
+        ),
+    )
+    parser.add_argument(
+        "--targets",
+        default="all",
+        help=(
+            "Comma-separated classic targets. Supported values: "
+            "cursor,vscode,claude,antigravity,all"
+        ),
+    )
+    return parser.parse_args()
+
+
+def parse_targets(raw_targets):
+    entries = [entry.strip().lower() for entry in raw_targets.split(",") if entry.strip()]
+    if not entries:
+        raise SystemExit("--targets requires at least one target")
+
+    normalized = []
+    for entry in entries:
+        if entry == "all":
+            return list(ALL_CLASSIC_TARGETS)
+        if entry == "vscode-copilot":
+            entry = "vscode"
+        if entry not in ALL_CLASSIC_TARGETS:
+            valid = ",".join((*ALL_CLASSIC_TARGETS, "all"))
+            raise SystemExit(f"Unknown classic target '{entry}'. Supported values: {valid}")
+        if entry not in normalized:
+            normalized.append(entry)
+
+    return normalized
+
+
+def build_targets(project_root):
+    return {
+        "Antigravity": {
+            "root": USER_HOME / ".gemini",
+            "mapping_rules": {
+                "core": "",
+                "workflows": "antigravity/global_workflows",
+                "skills": "antigravity/skills"
+            },
+            "path_replacement": None
+        },
+        "Cursor": {
+            "root": project_root,
+            "mapping_rules": {
+                "core": ".",
+                "workflows": ".cursor/workflows",
+                "skills": ".cursor/skills"
+            },
+            "path_replacement": ".cursor"
+        },
+        "VSCode_Copilot": {
+            "root": project_root / ".vscode",
+            "mapping_rules": {
+                "core": ".",
+                "workflows": "workflows",
+                "skills": "skills"
+            },
+            "path_replacement": "workflows",
+        },
+        "Claude": {
+            "root": USER_HOME / ".claude",
+            "mapping_rules": {
+                "core": ".",
+                "workflows": "workflows",
+                "skills": "skills"
+            },
+            "path_replacement": None
+        }
+    }
+
+
+def setup_resources(project_root, selected_targets):
     print("--- STARTING DEEP AGENT SETUP (RECURSIVE REWRITE) ---")
     
     if not SOURCE_DIR.exists():
         print(f"[!] Source {SOURCE_DIR} missing.")
         return
 
+    targets = build_targets(project_root)
+
     # 1. PREPARE RESOURCES (Scan all files)
     # We will copy category by category
     categories = ["core", "workflows", "skills"]
 
     # 2. DISTRIBUTE
-    for ide, config in TARGETS.items():
+    for ide, config in targets.items():
+        if TARGET_NAME_MAP[ide] not in selected_targets:
+            continue
         print(f"\nProcessing {ide}...")
         root = config["root"]
         replacement_base = config["path_replacement"]
@@ -155,4 +202,11 @@ def setup_resources():
     print("\n--- SETUP COMPLETE ---")
 
 if __name__ == "__main__":
-    setup_resources()
+    args = parse_args()
+    selected_targets = parse_targets(args.targets)
+    project_root = (
+        Path(args.project_root).expanduser().resolve()
+        if args.project_root
+        else SCRIPT_DIR
+    )
+    setup_resources(project_root, selected_targets)
