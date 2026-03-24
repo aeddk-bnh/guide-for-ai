@@ -10,6 +10,7 @@ It is designed to be **IDE-Agnostic** and now ships with one unified installer e
     - **Cursor:** Installs as `.cursorrules`.
     - **VS Code Copilot:** Installs as `copilot-instructions.md`.
     - **Codex:** Installs into `AGENTS.md`, `.agents/skills`, and `.codex/agents`.
+    - **Gemini CLI:** Installs into `GEMINI.md` and `.gemini/commands` or `~/.gemini/commands`.
     - **Claude / OpenCode / Antigravity:** Installs skills and agents into their native home-directory paths.
 
 ## 📂 Structure
@@ -21,6 +22,7 @@ It is designed to be **IDE-Agnostic** and now ships with one unified installer e
 - `install_agent_env.py`: The backend used by the installer entrypoints.
 - `setup_agent_env.py`: Classic IDE installer backend.
 - `setup_codex_env.py`: Codex installer backend.
+- `setup_gemini_env.py`: Gemini CLI installer backend.
 
 ## 🚀 How to Use (Install)
 1. **Clone this repo** to your local machine:
@@ -45,6 +47,9 @@ It is designed to be **IDE-Agnostic** and now ships with one unified installer e
      - `~/.codex/AGENTS.md`
      - `~/.agents/skills`
      - `~/.codex/agents`
+   - installs Gemini CLI assets into global user paths by default:
+     - `~/.gemini/GEMINI.md`
+     - `~/.gemini/commands`
 
 4. **Optional flags:**
    ```bash
@@ -52,6 +57,8 @@ It is designed to be **IDE-Agnostic** and now ships with one unified installer e
    ./install.sh --codex-scope repo
    ./install.sh --targets codex,claude
    ./install.sh --target codex
+   ./install.sh --target gemini
+   ./install.sh --target gemini --gemini-scope repo
    ```
    Use `--project-root` when this installer repository is separate from the project you want to configure.
    Windows:
@@ -60,15 +67,19 @@ It is designed to be **IDE-Agnostic** and now ships with one unified installer e
    install.bat --codex-scope repo
    install.bat --targets codex,claude
    install.bat --target codex
+   install.bat --target gemini
+   install.bat --target gemini --gemini-scope repo
    ```
 
 5. **Target selection with `--targets`:**
-   - supported values: `cursor`, `vscode`, `claude`, `opencode`, `antigravity`, `codex`
+   - supported values: `cursor`, `vscode`, `claude`, `opencode`, `antigravity`, `codex`, `gemini`
    - use `all` or omit the flag to install everything
    - `--target codex` is accepted as a shortcut for a single target
+   - `--target gemini` is accepted as a shortcut for a single target
    - example:
    ```bash
    ./install.sh --targets codex
+   ./install.sh --targets gemini
    ./install.sh --targets cursor,vscode
    ./install.sh --targets claude,opencode,antigravity
    ```
@@ -85,9 +96,27 @@ It is designed to be **IDE-Agnostic** and now ships with one unified installer e
      - `~/.agents/skills`
      - `~/.codex/agents`
 
-7. **Reload your IDE / Codex session.** Your AI Agent is now fully updated with the latest protocols!
+7. **Gemini CLI global vs local:**
+   - `--target gemini` installs only Gemini CLI assets
+   - default Gemini CLI install mode is global user scope
+   - `--gemini-scope repo` writes into the current repository:
+     - `GEMINI.md`
+     - `.gemini/commands`
+   - `--gemini-scope user` writes into your user profile instead:
+     - `~/.gemini/GEMINI.md`
+     - `~/.gemini/commands`
+
+8. **Reload your IDE / CLI session.** Your AI Agent is now fully updated with the latest protocols!
 
 ## Codex Notes
 - Codex skills must live in a directory with `SKILL.md`, so the installer repackages the repository's single-file skills and workflows into Codex skill folders.
 - Codex custom agents use `.toml` files, so the installer converts the markdown files in `subagents/` into `.codex/agents/*.toml`.
 - `continuous-learning-v2` is skipped by default because it is currently written around Claude/OpenCode/Antigravity-specific hooks and paths.
+
+## Gemini CLI Notes
+- Gemini CLI docs use `GEMINI.md` files for hierarchical context and `.gemini/commands/*.toml` for reusable custom commands.
+- This installer maps `skills`, `workflows`, and `subagents` into namespaced Gemini CLI custom commands:
+  - `skills/*` -> `/skills:*`
+  - `workflows/*` -> `/workflows:*`
+  - `subagents/*` -> `/agents:*`
+- `continuous-learning-v2` is skipped because Gemini CLI docs expose custom commands and context files as the documented extension surface, not hook-based skills.

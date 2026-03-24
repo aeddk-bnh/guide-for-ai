@@ -13,6 +13,7 @@ SUBAGENTS_DIR = SOURCE_DIR / "subagents"
 MANAGE_CONFIG = SOURCE_DIR / "manage_agent_config.py"
 SETUP_CLASSIC = SCRIPT_DIR / "setup_agent_env.py"
 SETUP_CODEX = SCRIPT_DIR / "setup_codex_env.py"
+SETUP_GEMINI = SCRIPT_DIR / "setup_gemini_env.py"
 
 ALL_TARGETS = (
     "cursor",
@@ -21,16 +22,18 @@ ALL_TARGETS = (
     "opencode",
     "antigravity",
     "codex",
+    "gemini",
 )
 TARGET_ALIASES = {
     "vscode_copilot": "vscode",
     "vscode-copilot": "vscode",
+    "gemini-cli": "gemini",
 }
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Install guide-for-ai assets for classic IDE targets and Codex."
+        description="Install guide-for-ai assets for supported IDE and CLI targets."
     )
     parser.add_argument(
         "--project-root",
@@ -47,7 +50,7 @@ def parse_args():
         help=(
             "Install target list. Use a single value with `--target` or a comma-"
             "separated list with `--targets`. Supported values: "
-            "cursor,vscode,claude,opencode,antigravity,codex,all"
+            "cursor,vscode,claude,opencode,antigravity,codex,gemini,all"
         ),
     )
     parser.add_argument(
@@ -63,6 +66,16 @@ def parse_args():
     parser.add_argument(
         "--skills-home",
         help="Optional override for the user-level Codex skills path.",
+    )
+    parser.add_argument(
+        "--gemini-scope",
+        choices=("repo", "user"),
+        default="user",
+        help="Scope to use when installing Gemini CLI assets. Defaults to global user scope.",
+    )
+    parser.add_argument(
+        "--gemini-home",
+        help="Optional override for the user-level Gemini CLI home path.",
     )
     parser.add_argument(
         "--include-experimental-codex",
@@ -190,10 +203,21 @@ def main():
 
         run_python(SETUP_CODEX, *codex_args)
 
+    if "gemini" in targets:
+        gemini_args = ["--scope", args.gemini_scope]
+        if args.gemini_scope == "repo":
+            gemini_args.extend(["--repo-dir", str(project_root)])
+        if args.gemini_home:
+            gemini_args.extend(["--gemini-home", args.gemini_home])
+
+        run_python(SETUP_GEMINI, *gemini_args)
+
     print("--- UNIFIED INSTALL COMPLETE ---")
     print(f"Installed targets: {', '.join(targets)}")
     if "codex" in targets:
         print(f"Installed Codex assets with scope: {args.codex_scope}")
+    if "gemini" in targets:
+        print(f"Installed Gemini CLI assets with scope: {args.gemini_scope}")
 
 
 if __name__ == "__main__":
