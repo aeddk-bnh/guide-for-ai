@@ -11,7 +11,7 @@ It is designed to be **IDE-Agnostic** and now ships with one unified installer e
     - **VS Code Copilot:** Installs as `copilot-instructions.md`.
     - **Codex:** Installs into `AGENTS.md`, `.agents/skills`, and `.codex/agents`.
     - **Gemini CLI:** Installs into `GEMINI.md` and `.gemini/commands` or `~/.gemini/commands`.
-    - **Claude / OpenCode / Antigravity:** Installs skills and agents into their native home-directory paths.
+    - **Claude / OpenCode / Antigravity:** Installs skills and agents into their native paths, including `.opencode/...` project paths for OpenCode.
 
 ## 📂 Structure
 - `core/GEMINI.md`: Core Rules, Principles, and Checklists.
@@ -54,6 +54,7 @@ It is designed to be **IDE-Agnostic** and now ships with one unified installer e
 4. **Optional flags:**
    ```bash
    ./install.sh --project-root /path/to/project
+   ./install.sh --opencode-scope repo
    ./install.sh --codex-scope repo
    ./install.sh --targets codex,claude
    ./install.sh --target codex
@@ -64,6 +65,7 @@ It is designed to be **IDE-Agnostic** and now ships with one unified installer e
    Windows:
    ```bat
    install.bat --project-root C:\path\to\project
+   install.bat --opencode-scope repo
    install.bat --codex-scope repo
    install.bat --targets codex,claude
    install.bat --target codex
@@ -96,7 +98,19 @@ It is designed to be **IDE-Agnostic** and now ships with one unified installer e
      - `~/.agents/skills`
      - `~/.codex/agents`
 
-7. **Gemini CLI global vs local:**
+7. **OpenCode global vs local:**
+   - `--target opencode` installs only OpenCode assets
+   - default OpenCode install mode is global user scope
+   - `--opencode-scope repo` writes into the current repository:
+     - `AGENTS.md`
+     - `.opencode/skills/<skill>/SKILL.md`
+     - `.opencode/agents/*.md`
+   - `--opencode-scope user` writes into your user profile instead:
+     - `~/.config/opencode/AGENTS.md`
+     - `~/.config/opencode/skills/<skill>/SKILL.md`
+     - `~/.config/opencode/agents/*.md`
+
+8. **Gemini CLI global vs local:**
    - `--target gemini` installs only Gemini CLI assets
    - default Gemini CLI install mode is global user scope
    - `--gemini-scope repo` writes into the current repository:
@@ -106,12 +120,19 @@ It is designed to be **IDE-Agnostic** and now ships with one unified installer e
      - `~/.gemini/GEMINI.md`
      - `~/.gemini/commands`
 
-8. **Reload your IDE / CLI session.** Your AI Agent is now fully updated with the latest protocols!
+9. **Reload your IDE / CLI session.** Your AI Agent is now fully updated with the latest protocols!
 
 ## Codex Notes
 - Codex skills must live in a directory with `SKILL.md`, so the installer repackages the repository's single-file skills and workflows into Codex skill folders.
 - Codex custom agents use `.toml` files, so the installer converts the markdown files in `subagents/` into `.codex/agents/*.toml`.
 - `continuous-learning-v2` is skipped by default because it is currently written around Claude/OpenCode/Antigravity-specific hooks and paths.
+
+## OpenCode Notes
+- OpenCode docs support both user-global config under `~/.config/opencode/...` and project-local config under `.opencode/...`.
+- OpenCode instruction files live in `~/.config/opencode/AGENTS.md` for global scope and `AGENTS.md` at the project root for local scope.
+- OpenCode skills use the folder layout `skills/<name>/SKILL.md`, so the installer repackages top-level markdown skills into that shape.
+- OpenCode does not have a first-class `workflows/` directory, so workflow markdown files are repackaged as skills too.
+- OpenCode agents are installed as markdown files in `agents/`.
 
 ## Gemini CLI Notes
 - Gemini CLI docs use `GEMINI.md` files for hierarchical context and `.gemini/commands/*.toml` for reusable custom commands.

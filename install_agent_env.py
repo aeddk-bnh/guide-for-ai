@@ -8,7 +8,9 @@ from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).parent.resolve()
 SOURCE_DIR = SCRIPT_DIR / ".agent_code"
+CORE_FILE = SOURCE_DIR / "core" / "GEMINI.md"
 SKILLS_DIR = SOURCE_DIR / "skills"
+WORKFLOWS_DIR = SOURCE_DIR / "workflows"
 SUBAGENTS_DIR = SOURCE_DIR / "subagents"
 MANAGE_CONFIG = SOURCE_DIR / "manage_agent_config.py"
 SETUP_CLASSIC = SCRIPT_DIR / "setup_agent_env.py"
@@ -52,6 +54,16 @@ def parse_args():
             "separated list with `--targets`. Supported values: "
             "cursor,vscode,claude,opencode,antigravity,codex,gemini,all"
         ),
+    )
+    parser.add_argument(
+        "--opencode-scope",
+        choices=("repo", "user"),
+        default="user",
+        help="Scope to use when installing OpenCode assets. Defaults to global user scope.",
+    )
+    parser.add_argument(
+        "--opencode-home",
+        help="Optional override for the OpenCode config root used by `--opencode-scope user`.",
     )
     parser.add_argument(
         "--codex-scope",
@@ -119,15 +131,40 @@ def copy_directory_tree(source_dir, target_dir):
     shutil.copytree(source_dir, target_dir, dirs_exist_ok=True)
 
 
+def copy_markdown_files_as_skills(source_dir, target_dir):
+    for source_file in sorted(source_dir.glob("*.md")):
+        skill_dir = target_dir / source_file.stem
+        skill_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_file, skill_dir / "SKILL.md")
+
+
+def repackage_flat_markdown_skills(target_dir):
+    for source_file in sorted(target_dir.glob("*.md")):
+        if source_file.name.lower() in {"skill.md", "readme.md"}:
+            continue
+
+        skill_dir = target_dir / source_file.stem
+        skill_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_file, skill_dir / "SKILL.md")
+        source_file.unlink()
+
+
 def run_manage_config(*extra_args):
     run_python(MANAGE_CONFIG, *extra_args)
 
 
-def install_recursive_skills(target_dir, apply_antigravity_layout=False):
+def install_recursive_skills(
+    target_dir,
+    repackage_markdown_files=False,
+    extra_markdown_skill_sources=(),
+):
     copy_directory_tree(SKILLS_DIR, target_dir)
 
-    if apply_antigravity_layout:
-        run_manage_config("fix-antigravity-skills", str(target_dir))
+    for extra_source_dir in extra_markdown_skill_sources:
+        copy_markdown_files_as_skills(extra_source_dir, target_dir)
+
+    if repackage_markdown_files:
+        repackage_flat_markdown_skills(target_dir)
 
     continuous_learning_dir = target_dir / "continuous-learning-v2"
     if continuous_learning_dir.exists():
@@ -151,6 +188,39 @@ def default_project_root(args):
     return SCRIPT_DIR
 
 
+def adapt_content_for_opencode(text):
+    content = text.replace("\r\n", "\n")
+    exact_line = (
+        "**0.8 Workflow:** Strictly load and follow "
+        "@`C:\\Users\\ASUS\\.gemini\\antigravity\\global_workflows\\general-workflow.md`."
+    )
+    replacement = (
+        "**0.8 Workflow:** When the standard sequential workflow is needed, "
+        "load the `general-workflow` skill from the available OpenCode skills."
+    )
+    return content.replace(exact_line, replacement)
+
+
+def install_opencode_instructions(destination):
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    content = CORE_FILE.read_text(encoding="utf-8")
+    destination.write_text(adapt_content_for_opencode(content), encoding="utf-8")
+
+
+def resolve_opencode_root(args, project_root, user_home):
+    if args.opencode_scope == "repo":
+        return project_root / ".opencode"
+    if args.opencode_home:
+        return Path(args.opencode_home).expanduser().resolve()
+    return user_home / ".config" / "opencode"
+
+
+def resolve_opencode_instruction_path(args, project_root, opencode_root):
+    if args.opencode_scope == "repo":
+        return project_root / "AGENTS.md"
+    return opencode_root / "AGENTS.md"
+
+
 def main():
     args = parse_args()
     project_root = default_project_root(args)
@@ -172,7 +242,7 @@ def main():
         )
 
     claude_root = user_home / ".claude"
-    opencode_root = user_home / ".config" / "opencode"
+    opencode_root = resolve_opencode_root(args, project_root, user_home)
     antigravity_root = user_home / ".gemini" / "antigravity"
 
     if "claude" in targets:
@@ -180,13 +250,20 @@ def main():
         install_markdown_agents(claude_root / "agents")
 
     if "opencode" in targets:
-        install_recursive_skills(opencode_root / "skills")
+        install_opencode_instructions(
+            resolve_opencode_instruction_path(args, project_root, opencode_root)
+        )
+        install_recursive_skills(
+            opencode_root / "skills",
+            repackage_markdown_files=True,
+            extra_markdown_skill_sources=(WORKFLOWS_DIR,),
+        )
         install_markdown_agents(opencode_root / "agents", apply_opencode_format=True)
 
     if "antigravity" in targets:
         install_recursive_skills(
             antigravity_root / "skills",
-            apply_antigravity_layout=True,
+            repackage_markdown_files=True,
         )
         install_markdown_agents(antigravity_root / "agents")
 
@@ -214,6 +291,8 @@ def main():
 
     print("--- UNIFIED INSTALL COMPLETE ---")
     print(f"Installed targets: {', '.join(targets)}")
+    if "opencode" in targets:
+        print(f"Installed OpenCode assets with scope: {args.opencode_scope}")
     if "codex" in targets:
         print(f"Installed Codex assets with scope: {args.codex_scope}")
     if "gemini" in targets:
