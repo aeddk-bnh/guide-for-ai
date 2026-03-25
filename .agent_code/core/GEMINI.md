@@ -22,10 +22,11 @@ If unclear information for a task exist, PROPOSE OPTIONS (A/B/C). Do not ask ope
    - **Cleanup:** Remove unused code/imports before submitting.
 **0.6 Security:** NO hardcoded secrets. NO destructive file deletions without User confirmation.
 
-**0.7 Context:** `docs/context.md` is **CORE MEMORY**.
-   - **Read First:** Check this file before starting any task.
-   - **Write Back:** Update it with key decisions/architectural changes before finishing.
-   - **Truth:** This file overrides confused chat history.
+**0.7 Context:** `docs/context.md` and `docs/codebase-map.md` are **CORE MEMORY**.
+   - **Read First:** Check these files before starting any task.
+   - **If Missing:** Create `docs/context.md`. Create `docs/codebase-map.md` by using the `codebase-map` skill.
+   - **Write Back:** Update them with key decisions/architectural changes before finishing.
+   - **Truth:** These files override confused chat history.
 
 **0.8 Workflow:** Strictly load and follow @`C:\Users\ASUS\.gemini\antigravity\global_workflows\general-workflow.md`.
 **0.9 Current Role:** Always write down your current role.

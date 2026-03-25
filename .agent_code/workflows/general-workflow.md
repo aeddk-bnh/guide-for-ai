@@ -5,13 +5,13 @@ description: STRICT SEQUENTIAL WORKFLOWS FOR ALL AGENT ROLES.
 # GENERAL AGENT WORKFLOW
 
 ## 0. GLOBAL RULES
-1. **Context First:** Read `docs/context.md` BEFORE acting.
+1. **Context First:** Read `docs/context.md` and `docs/codebase-map.md` BEFORE acting.
 2. **Single Role:** One active role only.
 3. **Sequential:** Follow steps 1..N order.
 4. **Gate:** Stop if input ambiguous.
 5. **Evidence:** Output requires logs/tests.
 6. **Role Declaration:** Start every response with: `**Role: [Current Role]**`.
-7. **Context Update:** Update `docs/context.md` AFTER finishing.
+7. **Context Update:** Update `docs/context.md` and `docs/codebase-map.md` AFTER finishing.
 
 ---
 
