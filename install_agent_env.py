@@ -66,6 +66,10 @@ def parse_args():
         help="Optional override for the VS Code Copilot user home path.",
     )
     parser.add_argument(
+        "--vscode-settings",
+        help="Optional override for the VS Code user settings.json path.",
+    )
+    parser.add_argument(
         "--opencode-scope",
         choices=("repo", "user"),
         default="user",
@@ -253,6 +257,8 @@ def main():
             classic_args.extend(["--vscode-scope", args.vscode_scope])
             if args.vscode_home:
                 classic_args.extend(["--vscode-home", args.vscode_home])
+            if args.vscode_settings:
+                classic_args.extend(["--vscode-settings", args.vscode_settings])
         run_python(SETUP_CLASSIC, *classic_args)
 
     claude_root = user_home / ".claude"

@@ -1,267 +1,111 @@
 ---
 name: continuous-learning-v2
-description: Instinct-based learning system that observes sessions via hooks, creates atomic instincts with confidence scoring, and evolves them into skills/commands/agents.
-version: 2.0.0
+description: Instinct-based learning system that records tool-use observations through hooks, stores them as local runtime data, and helps evolve repeated patterns into instincts, skills, commands, or agents.
+version: 2.1.0
 ---
 
-# Continuous Learning v2 - Instinct-Based Architecture
+# Continuous Learning v2
 
-An advanced learning system that turns your Claude Code, OpenCode, or Antigravity sessions into reusable knowledge through atomic "instincts" - small learned behaviors with confidence scoring.
+## Goal
+Turn repeated coding behavior into reusable local knowledge.
 
-## Important: Environment-Specific Setup
+The system has three parts:
+- hooks append normalized tool events to `observations.jsonl`
+- scripts inspect those observations and manage instincts
+- an optional observer agent reviews patterns and drafts new instincts
 
-This skill requires manual configuration of file paths depending on your target environment:
+## Runtime Roots
+Use these variables to make the skill portable across environments:
+- `CONTINUOUS_LEARNING_HOME`: runtime directory for observations, instincts, and evolved artifacts
+- `CONTINUOUS_LEARNING_SKILL_DIR`: installed skill directory
 
-- **Claude Code**: `~/.claude/`
-- **OpenCode**: `~/.config/opencode/`
-- **Antigravity**: `%USERPROFILE%\.gemini\antigravity\`
+If no override is provided, scripts fall back to `~/.claude/homunculus` for backward compatibility.
 
-Throughout this document, you will see paths prefixed with `~/.claude/`. **You must manually replace these with the correct path for your target environment.**
+## VS Code Support
+The VS Code installer should provide:
+- user scope:
+  - `~/.copilot/skills/continuous-learning-v2`
+  - `~/.copilot/agents/continuous-learning-observer.agent.md`
+  - `~/.copilot/hooks/continuous-learning-v2.json`
+  - `chat.hookFilesLocations` patched in VS Code user settings
+  - runtime home: `~/.copilot/continuous-learning-v2`
+- repo scope:
+  - `.github/skills/continuous-learning-v2`
+  - `.github/agents/continuous-learning-observer.agent.md`
+  - `.github/hooks/continuous-learning-v2.json`
+  - runtime home: `.github/.continuous-learning-v2`
 
-## What's New in v2
-
-| Feature | v1 | v2 |
-|---------|----|----|
-| Observation | Stop hook (session end) | PreToolUse/PostToolUse (100% reliable) |
-| Analysis | Main context | Background agent (Haiku) |
-| Granularity | Full skills | Atomic "instincts" |
-| Confidence | None | 0.3-0.9 weighted |
-| Evolution | Direct to skill | Instincts → cluster → skill/command/agent |
-| Sharing | None | Export/import instincts |
-
-## The Instinct Model
-
-An instinct is a small learned behavior:
-
-```yaml
----
-id: prefer-functional-style
-trigger: "when writing new functions"
-confidence: 0.7
-domain: "code-style"
-source: "session-observation"
----
-
-# Prefer Functional Style
-
-## Action
-Use functional patterns over classes when appropriate.
-
-## Evidence
-- Observed 5 instances of functional pattern preference
-- User corrected class-based approach to functional on 2025-01-15
-```
-
-**Properties:**
-- **Atomic** — one trigger, one action
-- **Confidence-weighted** — 0.3 = tentative, 0.9 = near certain
-- **Domain-tagged** — code-style, testing, git, debugging, workflow, etc.
-- **Evidence-backed** — tracks what observations created it
-
-## How It Works
-
-```
-Session Activity
-      │
-      │ Hooks capture prompts + tool use (100% reliable)
-      ▼
-┌─────────────────────────────────────────┐
-│         observations.jsonl              │
-│   (prompts, tool calls, outcomes)       │
-└─────────────────────────────────────────┘
-      │
-      │ Observer agent reads (background, Haiku)
-      ▼
-┌─────────────────────────────────────────┐
-│          PATTERN DETECTION              │
-│   • User corrections → instinct         │
-│   • Error resolutions → instinct        │
-│   • Repeated workflows → instinct       │
-└─────────────────────────────────────────┘
-      │
-      │ Creates/updates
-      ▼
-┌─────────────────────────────────────────┐
-│         instincts/personal/             │
-│   • prefer-functional.md (0.7)          │
-│   • always-test-first.md (0.9)          │
-│   • use-zod-validation.md (0.6)         │
-└─────────────────────────────────────────┘
-      │
-      │ /evolve clusters
-      ▼
-┌─────────────────────────────────────────┐
-│              evolved/                   │
-│   • commands/new-feature.md             │
-│   • skills/testing-workflow.md          │
-│   • agents/refactor-specialist.md       │
-└─────────────────────────────────────────┘
-```
+The installed hook file should set `CONTINUOUS_LEARNING_HOME` and `CONTINUOUS_LEARNING_SKILL_DIR` automatically. The installer should also register the user hook directory in `chat.hookFilesLocations`.
 
 ## Quick Start
-
-### 1. Enable Observation Hooks
-
-Add to your `~/.claude/settings.json`:
-
-```json
-{
-  "hooks": {
-    "PreToolUse": [{
-      "matcher": "*",
-      "hooks": [{
-        "type": "command",
-        "command": "~/.claude/skills/continuous-learning-v2/hooks/observe.sh pre"
-      }]
-    }],
-    "PostToolUse": [{
-      "matcher": "*",
-      "hooks": [{
-        "type": "command",
-        "command": "~/.claude/skills/continuous-learning-v2/hooks/observe.sh post"
-      }]
-    }]
-  }
-}
-```
-
-### 2. Initialize Directory Structure
-
+### VS Code user scope
 ```bash
-mkdir -p ~/.claude/homunculus/{instincts/{personal,inherited},evolved/{agents,skills,commands}}
-touch ~/.claude/homunculus/observations.jsonl
+python ~/.copilot/skills/continuous-learning-v2/scripts/instinct-cli.py --home ~/.copilot/continuous-learning-v2 status
+python ~/.copilot/skills/continuous-learning-v2/scripts/instinct-cli.py --home ~/.copilot/continuous-learning-v2 evolve
 ```
 
-### 3. Run the Observer Agent (Optional)
-
-The observer can run in the background analyzing observations:
-
+### VS Code repo scope
 ```bash
-# Start background observer
-~/.claude/skills/continuous-learning-v2/agents/start-observer.sh
+python .github/skills/continuous-learning-v2/scripts/instinct-cli.py --home .github/.continuous-learning-v2 status
+python .github/skills/continuous-learning-v2/scripts/instinct-cli.py --home .github/.continuous-learning-v2 evolve
 ```
 
-## Commands
-
-| Command | Description |
-|---------|-------------|
-| `/instinct-status` | Show all learned instincts with confidence |
-| `/evolve` | Cluster related instincts into skills/commands |
-| `/instinct-export` | Export instincts for sharing |
-| `/instinct-import <file>` | Import instincts from others |
-
-## Configuration
-
-Edit `config.json`:
-
-```json
-{
-  "version": "2.0",
-  "observation": {
-    "enabled": true,
-    "store_path": "~/.claude/homunculus/observations.jsonl",
-    "max_file_size_mb": 10,
-    "archive_after_days": 7
-  },
-  "instincts": {
-    "personal_path": "~/.claude/homunculus/instincts/personal/",
-    "inherited_path": "~/.claude/homunculus/instincts/inherited/",
-    "min_confidence": 0.3,
-    "auto_approve_threshold": 0.7,
-    "confidence_decay_rate": 0.05
-  },
-  "observer": {
-    "enabled": true,
-    "model": "haiku",
-    "run_interval_minutes": 5,
-    "patterns_to_detect": [
-      "user_corrections",
-      "error_resolutions",
-      "repeated_workflows",
-      "tool_preferences"
-    ]
-  },
-  "evolution": {
-    "cluster_threshold": 3,
-    "evolved_path": "~/.claude/homunculus/evolved/"
-  }
-}
+### Claude-compatible fallback
+```bash
+python ~/.claude/skills/continuous-learning-v2/scripts/instinct-cli.py status
 ```
 
-## File Structure
+## What the Hook Records
+Each hook invocation appends one normalized event to `observations.jsonl`:
+- timestamp
+- event type such as `tool_start` or `tool_complete`
+- tool name
+- session id when available
+- compact input or output payloads
 
+## Main Workflows
+### 1. Observe
+- Install the hook config for your environment.
+- Let sessions accumulate observations.
+- Disable temporarily by creating `<runtime-home>/disabled`.
+
+### 2. Inspect instincts
+- Run `status` to view current instincts.
+- Run `export` to share local instincts.
+- Run `import` to merge inherited instincts.
+
+### 3. Evolve patterns
+- Run `evolve` after enough observations exist.
+- Review suggested clusters before turning them into higher-level structures.
+
+### 4. Review with the observer agent
+- Use the `continuous-learning-observer` custom agent when you want AI help drafting or refining instincts.
+- The agent should read `observations.jsonl`, inspect existing instincts, and write conservative updates to `instincts/personal/`.
+
+## Runtime Layout
+```text
+<CONTINUOUS_LEARNING_HOME>/
+  observations.jsonl
+  observations.archive/
+  disabled
+  instincts/
+    personal/
+    inherited/
+  evolved/
+    skills/
+    commands/
+    agents/
 ```
-~/.claude/homunculus/
-├── identity.json           # Your profile, technical level
-├── observations.jsonl      # Current session observations
-├── observations.archive/   # Processed observations
-├── instincts/
-│   ├── personal/           # Auto-learned instincts
-│   └── inherited/          # Imported from others
-└── evolved/
-    ├── agents/             # Generated specialist agents
-    ├── skills/             # Generated skills
-    └── commands/           # Generated commands
-```
 
-## Integration with Skill Creator
+## Files in this Skill
+- `hooks/observe.py`: portable hook entrypoint for VS Code and Claude-style hook payloads
+- `hooks/observe.sh`: shell wrapper for existing Claude-style installs
+- `scripts/instinct-cli.py`: manage status, import, export, and evolve
+- `agents/observer.md`: source instructions for the observer custom agent
+- `commands/`: reference docs for the CLI actions
 
-When you use the [Skill Creator GitHub App](https://skill-creator.app), it now generates **both**:
-- Traditional SKILL.md files (for backward compatibility)
-- Instinct collections (for v2 learning system)
-
-Instincts from repo analysis have `source: "repo-analysis"` and include the source repository URL.
-
-## Confidence Scoring
-
-Confidence evolves over time:
-
-| Score | Meaning | Behavior |
-|-------|---------|----------|
-| 0.3 | Tentative | Suggested but not enforced |
-| 0.5 | Moderate | Applied when relevant |
-| 0.7 | Strong | Auto-approved for application |
-| 0.9 | Near-certain | Core behavior |
-
-**Confidence increases** when:
-- Pattern is repeatedly observed
-- User doesn't correct the suggested behavior
-- Similar instincts from other sources agree
-
-**Confidence decreases** when:
-- User explicitly corrects the behavior
-- Pattern isn't observed for extended periods
-- Contradicting evidence appears
-
-## Why Hooks vs Skills for Observation?
-
-> "v1 relied on skills to observe. Skills are probabilistic—they fire ~50-80% of the time based on Claude's judgment."
-
-Hooks fire **100% of the time**, deterministically. This means:
-- Every tool call is observed
-- No patterns are missed
-- Learning is comprehensive
-
-## Backward Compatibility
-
-v2 is fully compatible with v1:
-- Existing `~/.claude/skills/learned/` skills still work
-- Stop hook still runs (but now also feeds into v2)
-- Gradual migration path: run both in parallel
-
-## Privacy
-
-- Observations stay **local** on your machine
-- Only **instincts** (patterns) can be exported
-- No actual code or conversation content is shared
-- You control what gets exported
-
-## Related
-
-- [Skill Creator](https://skill-creator.app) - Generate instincts from repo history
-- [Homunculus](https://github.com/humanplane/homunculus) - Inspiration for v2 architecture
-- [The Longform Guide](https://x.com/affaanmustafa/status/2014040193557471352) - Continuous learning section
-
----
-
-*Instinct-based learning: teaching Claude your patterns, one observation at a time.*
+## Rules
+- Keep all learned data local unless the user explicitly exports it.
+- Never store full code snippets in instincts when pattern summaries are enough.
+- Prefer conservative instinct creation: repeated evidence beats single-session guesses.
+- Treat imported instincts as inherited suggestions, not hard rules.

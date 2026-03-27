@@ -24,16 +24,46 @@ from typing import Optional
 # Configuration
 # ─────────────────────────────────────────────
 
-HOMUNCULUS_DIR = Path.home() / ".claude" / "homunculus"
+DEFAULT_HOME = Path.home() / ".claude" / "homunculus"
+HOMUNCULUS_DIR = DEFAULT_HOME
 INSTINCTS_DIR = HOMUNCULUS_DIR / "instincts"
 PERSONAL_DIR = INSTINCTS_DIR / "personal"
 INHERITED_DIR = INSTINCTS_DIR / "inherited"
 EVOLVED_DIR = HOMUNCULUS_DIR / "evolved"
 OBSERVATIONS_FILE = HOMUNCULUS_DIR / "observations.jsonl"
 
-# Ensure directories exist
-for d in [PERSONAL_DIR, INHERITED_DIR, EVOLVED_DIR / "skills", EVOLVED_DIR / "commands", EVOLVED_DIR / "agents"]:
-    d.mkdir(parents=True, exist_ok=True)
+
+def configure_paths(home_override: Optional[str] = None):
+    global HOMUNCULUS_DIR
+    global INSTINCTS_DIR
+    global PERSONAL_DIR
+    global INHERITED_DIR
+    global EVOLVED_DIR
+    global OBSERVATIONS_FILE
+
+    raw_home = home_override or os.environ.get("CONTINUOUS_LEARNING_HOME")
+    base_dir = Path(raw_home).expanduser() if raw_home else DEFAULT_HOME
+    if not base_dir.is_absolute():
+        base_dir = (Path.cwd() / base_dir).resolve()
+
+    HOMUNCULUS_DIR = base_dir
+    INSTINCTS_DIR = HOMUNCULUS_DIR / "instincts"
+    PERSONAL_DIR = INSTINCTS_DIR / "personal"
+    INHERITED_DIR = INSTINCTS_DIR / "inherited"
+    EVOLVED_DIR = HOMUNCULUS_DIR / "evolved"
+    OBSERVATIONS_FILE = HOMUNCULUS_DIR / "observations.jsonl"
+
+    for directory in [
+        PERSONAL_DIR,
+        INHERITED_DIR,
+        EVOLVED_DIR / "skills",
+        EVOLVED_DIR / "commands",
+        EVOLVED_DIR / "agents",
+    ]:
+        directory.mkdir(parents=True, exist_ok=True)
+
+
+configure_paths()
 
 
 # ─────────────────────────────────────────────
@@ -453,6 +483,10 @@ def cmd_evolve(args):
 
 def main():
     parser = argparse.ArgumentParser(description='Instinct CLI for Continuous Learning v2')
+    parser.add_argument(
+        '--home',
+        help='Runtime directory for observations, instincts, and evolved artifacts.',
+    )
     subparsers = parser.add_subparsers(dest='command', help='Available commands')
 
     # Status
@@ -476,6 +510,7 @@ def main():
     evolve_parser.add_argument('--generate', action='store_true', help='Generate evolved structures')
 
     args = parser.parse_args()
+    configure_paths(args.home)
 
     if args.command == 'status':
         return cmd_status(args)

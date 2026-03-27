@@ -8,7 +8,7 @@ It is designed to be **IDE-Agnostic** and now ships with one unified installer e
 - **Smart Path Patching:** Automatically rewrites absolute paths in markdown files to match the target IDE's environment (e.g., changes `C:\Users...` to `.cursor/workflows/...`).
 - **Multi-IDE Support:** 
     - **Cursor:** Installs as `.cursorrules`.
-    - **VS Code Copilot:** Installs globally by default into `~/.copilot/instructions`, `~/.copilot/skills`, and `~/.copilot/agents`, or into `.github/*` with repo scope.
+    - **VS Code Copilot:** Installs globally by default into `~/.copilot/instructions`, `~/.copilot/skills`, `~/.copilot/agents`, and `~/.copilot/hooks`, and patches `chat.hookFilesLocations` in VS Code user settings, or into `.github/*` with repo scope.
     - **Codex:** Installs into `AGENTS.md`, `.agents/skills`, and `.codex/agents`.
     - **Gemini CLI:** Installs into `GEMINI.md` and `.gemini/commands` or `~/.gemini/commands`.
     - **Claude / OpenCode / Antigravity:** Installs skills and agents into their native paths, including `.opencode/...` project paths for OpenCode.
@@ -55,6 +55,7 @@ It is designed to be **IDE-Agnostic** and now ships with one unified installer e
    ```bash
    ./install.sh --project-root /path/to/project
    ./install.sh --vscode-scope repo
+   ./install.sh --vscode-settings /path/to/settings.json
    ./install.sh --opencode-scope repo
    ./install.sh --codex-scope repo
    ./install.sh --targets codex,claude
@@ -67,6 +68,7 @@ It is designed to be **IDE-Agnostic** and now ships with one unified installer e
    ```bat
    install.bat --project-root C:\path\to\project
    install.bat --vscode-scope repo
+   install.bat --vscode-settings C:\path\to\settings.json
    install.bat --opencode-scope repo
    install.bat --codex-scope repo
    install.bat --targets codex,claude
@@ -127,7 +129,7 @@ It is designed to be **IDE-Agnostic** and now ships with one unified installer e
 ## Codex Notes
 - Codex skills must live in a directory with `SKILL.md`, so the installer repackages the repository's single-file skills and workflows into Codex skill folders.
 - Codex custom agents use `.toml` files, so the installer converts the markdown files in `subagents/` into `.codex/agents/*.toml`.
-- `continuous-learning-v2` is skipped by default because it is currently written around Claude/OpenCode/Antigravity-specific hooks and paths.
+- `continuous-learning-v2` is still skipped by default for Codex because this repo does not yet provide a Codex-native hook/runtime port for it.
 
 ## OpenCode Notes
 - OpenCode docs support both user-global config under `~/.config/opencode/...` and project-local config under `.opencode/...`.
@@ -142,12 +144,17 @@ It is designed to be **IDE-Agnostic** and now ships with one unified installer e
   - `~/.copilot/instructions/guide-for-ai.instructions.md`
   - `~/.copilot/skills/<name>/SKILL.md`
   - `~/.copilot/agents/*.agent.md`
+  - `~/.copilot/hooks/continuous-learning-v2.json`
+  - `chat.hookFilesLocations` patched in VS Code user settings
 - `--target vscode --vscode-scope repo` writes to:
   - `.github/copilot-instructions.md`
   - `.github/skills/<name>/SKILL.md`
   - `.github/agents/*.agent.md`
+  - `.github/hooks/continuous-learning-v2.json`
 - This installer repackages both top-level `skills/*.md` and `workflows/*.md` into VS Code skills.
 - This installer converts markdown files in `subagents/` into VS Code custom agent files with the `.agent.md` extension.
+- For `continuous-learning-v2`, the installer also copies the full recursive skill directory and installs a VS Code hook file plus a `continuous-learning-observer` custom agent.
+- If you use VS Code Insiders or a non-default profile settings file, pass `--vscode-settings` so the installer patches the right `settings.json`.
 
 ## Gemini CLI Notes
 - Gemini CLI docs use `GEMINI.md` files for hierarchical context and `.gemini/commands/*.toml` for reusable custom commands.

@@ -1,6 +1,9 @@
 import argparse
+import json
 import os
+import platform
 import re
+import shutil
 from pathlib import Path
 
 # --- CONFIGURATION ---
@@ -22,6 +25,7 @@ VSCODE_WORKFLOW_REPLACEMENT = (
     "the standard sequential workflow is needed."
 )
 VSCODE_USER_INSTRUCTIONS_FRONTMATTER = "---\napplyTo: \"**\"\n---\n\n"
+CONTINUOUS_LEARNING_SKILL = "continuous-learning-v2"
 
 # The absolute path we want to get rid of
 ABSOLUTE_PATH_PREFIX = r"c:\Users\ASUS\.gemini\antigravity"
@@ -63,6 +67,10 @@ def parse_args():
         "--vscode-home",
         help="Optional override for the VS Code Copilot user home path used by `--vscode-scope user`.",
     )
+    parser.add_argument(
+        "--vscode-settings",
+        help="Optional override for the VS Code user settings.json path used when patching chat.hookFilesLocations.",
+    )
     return parser.parse_args()
 
 
@@ -86,7 +94,133 @@ def parse_targets(raw_targets):
     return normalized
 
 
-def build_targets(project_root, vscode_scope, vscode_home):
+def strip_jsonc_comments(text):
+    result = []
+    in_string = False
+    escape = False
+    in_single_line_comment = False
+    in_multi_line_comment = False
+    quote_char = ""
+    index = 0
+
+    while index < len(text):
+        char = text[index]
+        next_char = text[index + 1] if index + 1 < len(text) else ""
+
+        if in_single_line_comment:
+            if char == "\n":
+                in_single_line_comment = False
+                result.append(char)
+            index += 1
+            continue
+
+        if in_multi_line_comment:
+            if char == "*" and next_char == "/":
+                in_multi_line_comment = False
+                index += 2
+            else:
+                index += 1
+            continue
+
+        if in_string:
+            result.append(char)
+            if escape:
+                escape = False
+            elif char == "\\":
+                escape = True
+            elif char == quote_char:
+                in_string = False
+            index += 1
+            continue
+
+        if char in {'"', "'"}:
+            in_string = True
+            quote_char = char
+            result.append(char)
+            index += 1
+            continue
+
+        if char == "/" and next_char == "/":
+            in_single_line_comment = True
+            index += 2
+            continue
+
+        if char == "/" and next_char == "*":
+            in_multi_line_comment = True
+            index += 2
+            continue
+
+        result.append(char)
+        index += 1
+
+    return "".join(result)
+
+
+def strip_trailing_commas(text):
+    result = []
+    in_string = False
+    escape = False
+    quote_char = ""
+    index = 0
+
+    while index < len(text):
+        char = text[index]
+
+        if in_string:
+            result.append(char)
+            if escape:
+                escape = False
+            elif char == "\\":
+                escape = True
+            elif char == quote_char:
+                in_string = False
+            index += 1
+            continue
+
+        if char in {'"', "'"}:
+            in_string = True
+            quote_char = char
+            result.append(char)
+            index += 1
+            continue
+
+        if char == ",":
+            lookahead = index + 1
+            while lookahead < len(text) and text[lookahead].isspace():
+                lookahead += 1
+            if lookahead < len(text) and text[lookahead] in "}]":
+                index += 1
+                continue
+
+        result.append(char)
+        index += 1
+
+    return "".join(result)
+
+
+def load_jsonc_file(path):
+    raw = path.read_text(encoding="utf-8")
+    cleaned = strip_trailing_commas(strip_jsonc_comments(raw))
+    return json.loads(cleaned)
+
+
+def resolve_vscode_settings_path(vscode_settings):
+    if vscode_settings:
+        return Path(vscode_settings).expanduser().resolve()
+
+    if os.name == "nt":
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            return Path(appdata) / "Code" / "User" / "settings.json"
+
+    system = platform.system()
+    if system == "Darwin":
+        return Path.home() / "Library" / "Application Support" / "Code" / "User" / "settings.json"
+
+    return Path.home() / ".config" / "Code" / "User" / "settings.json"
+
+
+def build_targets(project_root, vscode_scope, vscode_home, vscode_settings):
     vscode_root = (
         project_root / ".github"
         if vscode_scope == "repo"
@@ -95,6 +229,9 @@ def build_targets(project_root, vscode_scope, vscode_home):
             if vscode_home
             else USER_HOME / ".copilot"
         )
+    )
+    vscode_settings_path = (
+        None if vscode_scope == "repo" else resolve_vscode_settings_path(vscode_settings)
     )
 
     return {
@@ -126,6 +263,7 @@ def build_targets(project_root, vscode_scope, vscode_home):
             },
             "path_replacement": None,
             "scope": vscode_scope,
+            "settings_path": vscode_settings_path,
         },
         "Claude": {
             "root": USER_HOME / ".claude",
@@ -139,14 +277,183 @@ def build_targets(project_root, vscode_scope, vscode_home):
     }
 
 
-def setup_resources(project_root, selected_targets, vscode_scope, vscode_home):
+def adapt_vscode_markdown(content, add_user_frontmatter=False):
+    updated = content.replace(
+        VSCODE_WORKFLOW_LINE,
+        VSCODE_WORKFLOW_REPLACEMENT,
+    )
+    if add_user_frontmatter:
+        updated = VSCODE_USER_INSTRUCTIONS_FRONTMATTER + updated
+    return updated
+
+
+def install_vscode_core(config):
+    root = config["root"]
+    scope = config["scope"]
+    core_file = SOURCE_DIR / "core" / "GEMINI.md"
+    dest_dir = root if scope == "repo" else root / "instructions"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    final_dest = (
+        root / "copilot-instructions.md"
+        if scope == "repo"
+        else dest_dir / "guide-for-ai.instructions.md"
+    )
+    content = core_file.read_text(encoding="utf-8")
+    content = adapt_vscode_markdown(content, add_user_frontmatter=(scope == "user"))
+    final_dest.write_text(content, encoding="utf-8")
+    print(f"  [v] Category 'core' installed to {dest_dir}")
+
+
+def install_vscode_flat_skills(source_dir, dest_dir):
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    for src_file in sorted(source_dir.glob("*.md")):
+        skill_dir = dest_dir / src_file.stem
+        skill_dir.mkdir(parents=True, exist_ok=True)
+        content = adapt_vscode_markdown(src_file.read_text(encoding="utf-8"))
+        (skill_dir / "SKILL.md").write_text(content, encoding="utf-8")
+
+
+def install_vscode_skill_directories(source_dir, dest_dir):
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    for src_dir in sorted(source_dir.iterdir()):
+        if not src_dir.is_dir():
+            continue
+        if not (src_dir / "SKILL.md").exists():
+            continue
+
+        target_dir = dest_dir / src_dir.name
+        shutil.copytree(src_dir, target_dir, dirs_exist_ok=True)
+
+
+def install_vscode_agents(dest_dir):
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    for src_file in sorted((SOURCE_DIR / "subagents").glob("*.md")):
+        content = src_file.read_text(encoding="utf-8")
+        (dest_dir / f"{src_file.stem}.agent.md").write_text(content, encoding="utf-8")
+
+    observer_source = (
+        SOURCE_DIR / "skills" / CONTINUOUS_LEARNING_SKILL / "agents" / "observer.md"
+    )
+    if observer_source.exists():
+        observer_dest = dest_dir / "continuous-learning-observer.agent.md"
+        observer_dest.write_text(
+            observer_source.read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+
+
+def build_vscode_continuous_learning_hook_entry(scope):
+    if scope == "repo":
+        skill_dir = ".github/skills/continuous-learning-v2"
+        runtime_home = ".github/.continuous-learning-v2"
+        windows_command = "python .github\\skills\\continuous-learning-v2\\hooks\\observe.py"
+        posix_command = "python3 .github/skills/continuous-learning-v2/hooks/observe.py"
+    else:
+        skill_dir = "~/.copilot/skills/continuous-learning-v2"
+        runtime_home = "~/.copilot/continuous-learning-v2"
+        windows_command = (
+            "python %USERPROFILE%\\.copilot\\skills\\continuous-learning-v2\\hooks\\observe.py"
+        )
+        posix_command = "python3 ~/.copilot/skills/continuous-learning-v2/hooks/observe.py"
+
+    hook_entry = {
+        "type": "command",
+        "command": posix_command,
+        "windows": windows_command,
+        "linux": posix_command,
+        "osx": posix_command,
+        "env": {
+            "CONTINUOUS_LEARNING_HOME": runtime_home,
+            "CONTINUOUS_LEARNING_SKILL_DIR": skill_dir,
+        },
+    }
+
+    return hook_entry
+
+
+def resolve_vscode_hook_location(root, scope):
+    if scope == "repo":
+        return None
+
+    actual_home = USER_HOME.resolve()
+    root = root.resolve()
+
+    try:
+        relative = root.relative_to(actual_home)
+        return f"~/{relative.as_posix()}/hooks"
+    except ValueError:
+        return str((root / "hooks").resolve())
+
+
+def install_vscode_hooks(config):
+    hook_entry = build_vscode_continuous_learning_hook_entry(config["scope"])
+
+    if config["scope"] == "repo":
+        hooks_dir = config["root"] / "hooks"
+        hooks_dir.mkdir(parents=True, exist_ok=True)
+        hook_path = hooks_dir / "continuous-learning-v2.json"
+        hook_config = {
+            "hooks": {
+                "PreToolUse": [hook_entry],
+                "PostToolUse": [hook_entry],
+            }
+        }
+        hook_path.write_text(json.dumps(hook_config, indent=2) + "\n", encoding="utf-8")
+        return hook_path
+
+    hooks_dir = config["root"] / "hooks"
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+    hook_path = hooks_dir / "continuous-learning-v2.json"
+    hook_config = {
+        "hooks": {
+            "PreToolUse": [hook_entry],
+            "PostToolUse": [hook_entry],
+        }
+    }
+    hook_path.write_text(json.dumps(hook_config, indent=2) + "\n", encoding="utf-8")
+
+    settings_path = config["settings_path"]
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    if settings_path.exists():
+        settings = load_jsonc_file(settings_path)
+    else:
+        settings = {}
+
+    hook_locations = settings.setdefault("chat.hookFilesLocations", {})
+    hook_locations[resolve_vscode_hook_location(config["root"], config["scope"])] = True
+
+    settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+    return hook_path
+
+
+def install_vscode_resources(config):
+    root = config["root"]
+    skills_dir = root / "skills"
+    agents_dir = root / "agents"
+
+    install_vscode_core(config)
+    install_vscode_flat_skills(SOURCE_DIR / "workflows", skills_dir)
+    install_vscode_flat_skills(SOURCE_DIR / "skills", skills_dir)
+    install_vscode_skill_directories(SOURCE_DIR / "skills", skills_dir)
+    print(f"  [v] Category 'workflows' installed to {skills_dir}")
+    print(f"  [v] Category 'skills' installed to {skills_dir}")
+
+    install_vscode_agents(agents_dir)
+    print(f"  [v] Category 'subagents' installed to {agents_dir}")
+
+    hook_output = install_vscode_hooks(config)
+    print(f"  [v] Category 'hooks' installed to {hook_output.parent}")
+
+
+def setup_resources(project_root, selected_targets, vscode_scope, vscode_home, vscode_settings):
     print("--- STARTING DEEP AGENT SETUP (RECURSIVE REWRITE) ---")
     
     if not SOURCE_DIR.exists():
         print(f"[!] Source {SOURCE_DIR} missing.")
         return
 
-    targets = build_targets(project_root, vscode_scope, vscode_home)
+    targets = build_targets(project_root, vscode_scope, vscode_home, vscode_settings)
 
     # 1. PREPARE RESOURCES (Scan all files)
     # We will copy category by category
@@ -159,6 +466,10 @@ def setup_resources(project_root, selected_targets, vscode_scope, vscode_home):
         print(f"\nProcessing {ide}...")
         root = config["root"]
         replacement_base = config["path_replacement"]
+
+        if ide == "VSCode_Copilot":
+            install_vscode_resources(config)
+            continue
         
         for category in categories:
             src_category_dir = SOURCE_DIR / category
@@ -247,4 +558,5 @@ if __name__ == "__main__":
         selected_targets,
         args.vscode_scope,
         args.vscode_home,
+        args.vscode_settings,
     )
