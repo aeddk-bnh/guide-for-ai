@@ -13,6 +13,15 @@ USER_HOME = Path(os.path.expanduser("~"))
 
 # Define Replacements: (Old String, New String)
 ORIGINAL_REF_PATH = r"c:\Users\ASUS\.gemini\antigravity\global_workflows\general-workflow.md"
+VSCODE_WORKFLOW_LINE = (
+    "**0.8 Workflow:** Strictly load and follow "
+    "@`C:\\Users\\ASUS\\.gemini\\antigravity\\global_workflows\\general-workflow.md`."
+)
+VSCODE_WORKFLOW_REPLACEMENT = (
+    "**0.8 Workflow:** Use the installed `general-workflow` skill whenever "
+    "the standard sequential workflow is needed."
+)
+VSCODE_USER_INSTRUCTIONS_FRONTMATTER = "---\napplyTo: \"**\"\n---\n\n"
 
 # The absolute path we want to get rid of
 ABSOLUTE_PATH_PREFIX = r"c:\Users\ASUS\.gemini\antigravity"
@@ -44,6 +53,16 @@ def parse_args():
             "cursor,vscode,claude,antigravity,all"
         ),
     )
+    parser.add_argument(
+        "--vscode-scope",
+        choices=("repo", "user"),
+        default="user",
+        help="Scope to use when installing VS Code Copilot assets. Defaults to global user scope.",
+    )
+    parser.add_argument(
+        "--vscode-home",
+        help="Optional override for the VS Code Copilot user home path used by `--vscode-scope user`.",
+    )
     return parser.parse_args()
 
 
@@ -67,7 +86,17 @@ def parse_targets(raw_targets):
     return normalized
 
 
-def build_targets(project_root):
+def build_targets(project_root, vscode_scope, vscode_home):
+    vscode_root = (
+        project_root / ".github"
+        if vscode_scope == "repo"
+        else (
+            Path(vscode_home).expanduser().resolve()
+            if vscode_home
+            else USER_HOME / ".copilot"
+        )
+    )
+
     return {
         "Antigravity": {
             "root": USER_HOME / ".gemini",
@@ -88,13 +117,15 @@ def build_targets(project_root):
             "path_replacement": ".cursor"
         },
         "VSCode_Copilot": {
-            "root": project_root / ".vscode",
+            "root": vscode_root,
             "mapping_rules": {
-                "core": ".",
-                "workflows": "workflows",
-                "skills": "skills"
+                "core": "." if vscode_scope == "repo" else "instructions",
+                "workflows": "skills",
+                "skills": "skills",
+                "subagents": "agents",
             },
-            "path_replacement": "workflows",
+            "path_replacement": None,
+            "scope": vscode_scope,
         },
         "Claude": {
             "root": USER_HOME / ".claude",
@@ -108,18 +139,18 @@ def build_targets(project_root):
     }
 
 
-def setup_resources(project_root, selected_targets):
+def setup_resources(project_root, selected_targets, vscode_scope, vscode_home):
     print("--- STARTING DEEP AGENT SETUP (RECURSIVE REWRITE) ---")
     
     if not SOURCE_DIR.exists():
         print(f"[!] Source {SOURCE_DIR} missing.")
         return
 
-    targets = build_targets(project_root)
+    targets = build_targets(project_root, vscode_scope, vscode_home)
 
     # 1. PREPARE RESOURCES (Scan all files)
     # We will copy category by category
-    categories = ["core", "workflows", "skills"]
+    categories = ["core", "workflows", "skills", "subagents"]
 
     # 2. DISTRIBUTE
     for ide, config in targets.items():
@@ -146,7 +177,11 @@ def setup_resources(project_root, selected_targets):
                 # Special Renaming for Core Rules
                 if category == "core" and src_file.name == "GEMINI.md":
                     if ide == "Cursor": final_dest = root / ".cursorrules"
-                    elif ide == "VSCode_Copilot": final_dest = root / "copilot-instructions.md"
+                    elif ide == "VSCode_Copilot":
+                        if config["scope"] == "repo":
+                            final_dest = root / "copilot-instructions.md"
+                        else:
+                            final_dest = dest_dir / "guide-for-ai.instructions.md"
                     elif ide == "Claude": final_dest = root / "CLAUDE.md"
                 
                 # Special Folder Logic for Skills (Antigravity only)
@@ -154,6 +189,12 @@ def setup_resources(project_root, selected_targets):
                     skill_folder = dest_dir / src_file.stem
                     skill_folder.mkdir(parents=True, exist_ok=True)
                     final_dest = skill_folder / "SKILL.md"
+                elif ide == "VSCode_Copilot" and category in {"workflows", "skills"}:
+                    skill_folder = dest_dir / src_file.stem
+                    skill_folder.mkdir(parents=True, exist_ok=True)
+                    final_dest = skill_folder / "SKILL.md"
+                elif ide == "VSCode_Copilot" and category == "subagents":
+                    final_dest = dest_dir / f"{src_file.stem}.agent.md"
 
                 try:
                     final_dest.parent.mkdir(parents=True, exist_ok=True)
@@ -162,34 +203,26 @@ def setup_resources(project_root, selected_targets):
                     content = src_file.read_text(encoding='utf-8')
                     
                     # --- DEEP REWRITE LOGIC ---
-                    if replacement_base:
+                    if ide == "VSCode_Copilot":
+                        content = content.replace(
+                            VSCODE_WORKFLOW_LINE,
+                            VSCODE_WORKFLOW_REPLACEMENT,
+                        )
+                        if category == "core" and config["scope"] == "user":
+                            content = VSCODE_USER_INSTRUCTIONS_FRONTMATTER + content
+                    elif replacement_base:
                         # Use Regex for Case-Insensitive Replacement
                         pattern = re.escape(ABSOLUTE_PATH_PREFIX)
                         
-                        # VSCODE SPECIAL CASE: The structure flattens 'global_workflows' -> 'workflows'
-                        if ide == "VSCode_Copilot":
-                             # 1. Try generic absolute replacement
-                             content = re.sub(pattern, "workflows", content, flags=re.IGNORECASE)
-                             
-                             # 2. Cleanup leftover path segments that might linger
-                             # If we replaced path with 'workflows', we might get 'workflows\global_workflows'
-                             content = content.replace(r"workflows\global_workflows", "workflows")
-                             content = content.replace(r"workflows/global_workflows", "workflows")
-                             
-                             # 3. Cleanup leading .vscode if present (e.g. if previous run added it)
-                             content = content.replace(r".vscode\workflows", "workflows")
-                             content = content.replace(r".vscode/workflows", "workflows")
-                             
-                        else:
-                             # Generic Replacement (Cursor, Antigravity likely doesn't hit this as it's None)
-                             content = re.sub(pattern, replacement_base, content, flags=re.IGNORECASE)
-                             
-                             # Cleanup 'global_workflows' -> 'workflows' (Renaming/Flattening)
-                             content = content.replace(r"\global_workflows", r"\workflows")
-                             content = content.replace(r"/global_workflows", r"/workflows")
-                             
-                             pattern_fwd = re.escape(ABSOLUTE_PATH_PREFIX_FWD)
-                             content = re.sub(pattern_fwd, replacement_base, content, flags=re.IGNORECASE)
+                        # Generic Replacement (Cursor, Antigravity likely doesn't hit this as it's None)
+                        content = re.sub(pattern, replacement_base, content, flags=re.IGNORECASE)
+                        
+                        # Cleanup 'global_workflows' -> 'workflows' (Renaming/Flattening)
+                        content = content.replace(r"\global_workflows", r"\workflows")
+                        content = content.replace(r"/global_workflows", r"/workflows")
+                        
+                        pattern_fwd = re.escape(ABSOLUTE_PATH_PREFIX_FWD)
+                        content = re.sub(pattern_fwd, replacement_base, content, flags=re.IGNORECASE)
                         
                     # Write content
                     final_dest.write_text(content, encoding='utf-8')
@@ -209,4 +242,9 @@ if __name__ == "__main__":
         if args.project_root
         else SCRIPT_DIR
     )
-    setup_resources(project_root, selected_targets)
+    setup_resources(
+        project_root,
+        selected_targets,
+        args.vscode_scope,
+        args.vscode_home,
+    )

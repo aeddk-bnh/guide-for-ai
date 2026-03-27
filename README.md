@@ -8,7 +8,7 @@ It is designed to be **IDE-Agnostic** and now ships with one unified installer e
 - **Smart Path Patching:** Automatically rewrites absolute paths in markdown files to match the target IDE's environment (e.g., changes `C:\Users...` to `.cursor/workflows/...`).
 - **Multi-IDE Support:** 
     - **Cursor:** Installs as `.cursorrules`.
-    - **VS Code Copilot:** Installs as `copilot-instructions.md`.
+    - **VS Code Copilot:** Installs globally by default into `~/.copilot/instructions`, `~/.copilot/skills`, and `~/.copilot/agents`, or into `.github/*` with repo scope.
     - **Codex:** Installs into `AGENTS.md`, `.agents/skills`, and `.codex/agents`.
     - **Gemini CLI:** Installs into `GEMINI.md` and `.gemini/commands` or `~/.gemini/commands`.
     - **Claude / OpenCode / Antigravity:** Installs skills and agents into their native paths, including `.opencode/...` project paths for OpenCode.
@@ -54,6 +54,7 @@ It is designed to be **IDE-Agnostic** and now ships with one unified installer e
 4. **Optional flags:**
    ```bash
    ./install.sh --project-root /path/to/project
+   ./install.sh --vscode-scope repo
    ./install.sh --opencode-scope repo
    ./install.sh --codex-scope repo
    ./install.sh --targets codex,claude
@@ -65,6 +66,7 @@ It is designed to be **IDE-Agnostic** and now ships with one unified installer e
    Windows:
    ```bat
    install.bat --project-root C:\path\to\project
+   install.bat --vscode-scope repo
    install.bat --opencode-scope repo
    install.bat --codex-scope repo
    install.bat --targets codex,claude
@@ -133,6 +135,19 @@ It is designed to be **IDE-Agnostic** and now ships with one unified installer e
 - OpenCode skills use the folder layout `skills/<name>/SKILL.md`, so the installer repackages top-level markdown skills into that shape.
 - OpenCode does not have a first-class `workflows/` directory, so workflow markdown files are repackaged as skills too.
 - OpenCode agents are installed as markdown files in `agents/`.
+
+## VS Code Copilot Notes
+- Default VS Code install mode is global user scope.
+- `--target vscode` writes to:
+  - `~/.copilot/instructions/guide-for-ai.instructions.md`
+  - `~/.copilot/skills/<name>/SKILL.md`
+  - `~/.copilot/agents/*.agent.md`
+- `--target vscode --vscode-scope repo` writes to:
+  - `.github/copilot-instructions.md`
+  - `.github/skills/<name>/SKILL.md`
+  - `.github/agents/*.agent.md`
+- This installer repackages both top-level `skills/*.md` and `workflows/*.md` into VS Code skills.
+- This installer converts markdown files in `subagents/` into VS Code custom agent files with the `.agent.md` extension.
 
 ## Gemini CLI Notes
 - Gemini CLI docs use `GEMINI.md` files for hierarchical context and `.gemini/commands/*.toml` for reusable custom commands.

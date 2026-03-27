@@ -56,6 +56,16 @@ def parse_args():
         ),
     )
     parser.add_argument(
+        "--vscode-scope",
+        choices=("repo", "user"),
+        default="user",
+        help="Scope to use when installing VS Code Copilot assets. Defaults to global user scope.",
+    )
+    parser.add_argument(
+        "--vscode-home",
+        help="Optional override for the VS Code Copilot user home path.",
+    )
+    parser.add_argument(
         "--opencode-scope",
         choices=("repo", "user"),
         default="user",
@@ -233,13 +243,17 @@ def main():
 
     classic_targets = [target for target in ("cursor", "vscode", "claude", "antigravity") if target in targets]
     if classic_targets:
-        run_python(
-            SETUP_CLASSIC,
+        classic_args = [
             "--project-root",
             str(project_root),
             "--targets",
             ",".join(classic_targets),
-        )
+        ]
+        if "vscode" in classic_targets:
+            classic_args.extend(["--vscode-scope", args.vscode_scope])
+            if args.vscode_home:
+                classic_args.extend(["--vscode-home", args.vscode_home])
+        run_python(SETUP_CLASSIC, *classic_args)
 
     claude_root = user_home / ".claude"
     opencode_root = resolve_opencode_root(args, project_root, user_home)
@@ -291,6 +305,8 @@ def main():
 
     print("--- UNIFIED INSTALL COMPLETE ---")
     print(f"Installed targets: {', '.join(targets)}")
+    if "vscode" in targets:
+        print(f"Installed VS Code Copilot assets with scope: {args.vscode_scope}")
     if "opencode" in targets:
         print(f"Installed OpenCode assets with scope: {args.opencode_scope}")
     if "codex" in targets:
