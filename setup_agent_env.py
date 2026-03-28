@@ -1,4 +1,5 @@
 import argparse
+from collections import defaultdict
 import json
 import os
 import platform
@@ -37,6 +38,8 @@ TARGET_NAME_MAP = {
     "Claude": "claude",
     "Antigravity": "antigravity",
 }
+VALID_CATEGORIES = {"core", "workflows", "skills", "subagents", "hooks"}
+VSCODE_COMPAT_SURFACES = {"claude_md", "agents_md", "claude_skills", "agents_skills"}
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -71,6 +74,22 @@ def parse_args():
         "--vscode-settings",
         help="Optional override for the VS Code user settings.json path used when patching chat.hookFilesLocations.",
     )
+    parser.add_argument(
+        "--skip-map",
+        help=(
+            "Optional per-target categories to skip. Format: "
+            "`target:category1,category2;target:category3` with categories from "
+            "core,workflows,skills,subagents,hooks."
+        ),
+    )
+    parser.add_argument(
+        "--vscode-disable-compat",
+        default="",
+        help=(
+            "Comma-separated VS Code compatibility surfaces to disable in settings. "
+            "Supported values: claude_md,agents_md,claude_skills,agents_skills."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -92,6 +111,63 @@ def parse_targets(raw_targets):
             normalized.append(entry)
 
     return normalized
+
+
+def parse_skip_map(raw_skip_map):
+    skip_map = defaultdict(set)
+    if not raw_skip_map:
+        return skip_map
+
+    for chunk in raw_skip_map.split(";"):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        if ":" not in chunk:
+            raise SystemExit(
+                "--skip-map entries must use the format `target:category1,category2`"
+            )
+        target_name, raw_categories = chunk.split(":", 1)
+        target = target_name.strip().lower()
+        if target not in ALL_CLASSIC_TARGETS:
+            valid_targets = ",".join(ALL_CLASSIC_TARGETS)
+            raise SystemExit(
+                f"Unknown target '{target}' in --skip-map. Supported values: "
+                f"{valid_targets}"
+            )
+
+        categories = [entry.strip().lower() for entry in raw_categories.split(",") if entry.strip()]
+        if not categories:
+            raise SystemExit(f"--skip-map entry for '{target}' must list at least one category")
+
+        unknown = [category for category in categories if category not in VALID_CATEGORIES]
+        if unknown:
+            valid_categories = ",".join(sorted(VALID_CATEGORIES))
+            unknown_list = ",".join(unknown)
+            raise SystemExit(
+                f"Unknown categories in --skip-map for '{target}': {unknown_list}. "
+                f"Supported values: {valid_categories}"
+            )
+
+        skip_map[target].update(categories)
+
+    return skip_map
+
+
+def parse_vscode_disable_compat(raw_value):
+    if not raw_value:
+        return set()
+
+    disabled = {entry.strip().lower() for entry in raw_value.split(",") if entry.strip()}
+    unknown = disabled - VSCODE_COMPAT_SURFACES
+    if unknown:
+        valid_values = ",".join(sorted(VSCODE_COMPAT_SURFACES))
+        unknown_list = ",".join(sorted(unknown))
+        raise SystemExit(
+            f"Unknown compatibility surfaces in --vscode-disable-compat: "
+            f"{unknown_list}. Supported values: {valid_values}"
+        )
+
+    return disabled
 
 
 def strip_jsonc_comments(text):
@@ -204,9 +280,12 @@ def load_jsonc_file(path):
     return json.loads(cleaned)
 
 
-def resolve_vscode_settings_path(vscode_settings):
+def resolve_vscode_settings_path(vscode_settings, project_root=None):
     if vscode_settings:
         return Path(vscode_settings).expanduser().resolve()
+
+    if project_root is not None:
+        return project_root / ".vscode" / "settings.json"
 
     if os.name == "nt":
         appdata = os.environ.get("APPDATA")
@@ -231,7 +310,10 @@ def build_targets(project_root, vscode_scope, vscode_home, vscode_settings):
         )
     )
     vscode_settings_path = (
-        None if vscode_scope == "repo" else resolve_vscode_settings_path(vscode_settings)
+        resolve_vscode_settings_path(
+            vscode_settings,
+            project_root=project_root if vscode_scope == "repo" else None,
+        )
     )
 
     return {
@@ -264,6 +346,7 @@ def build_targets(project_root, vscode_scope, vscode_home, vscode_settings):
             "path_replacement": None,
             "scope": vscode_scope,
             "settings_path": vscode_settings_path,
+            "disabled_compat": set(),
         },
         "Claude": {
             "root": USER_HOME / ".claude",
@@ -433,6 +516,70 @@ def resolve_vscode_hook_location(root, scope):
         return str((root / "hooks").resolve())
 
 
+def update_vscode_location_setting(settings, key, location, enabled):
+    locations = settings.setdefault(key, {})
+    locations[location] = enabled
+
+
+def patch_vscode_settings(config, install_native_hooks):
+    disabled_compat = config.get("disabled_compat", set())
+    settings_path = config["settings_path"]
+
+    if not disabled_compat and not (install_native_hooks and config["scope"] == "user"):
+        return settings_path
+
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    if settings_path.exists():
+        settings = load_jsonc_file(settings_path)
+    else:
+        settings = {}
+
+    if "claude_md" in disabled_compat:
+        settings["chat.useClaudeMdFile"] = False
+
+    if "agents_md" in disabled_compat:
+        settings["chat.useAgentsMdFile"] = False
+
+    if "claude_skills" in disabled_compat:
+        update_vscode_location_setting(
+            settings,
+            "chat.agentSkillsLocations",
+            ".claude/skills",
+            False,
+        )
+        update_vscode_location_setting(
+            settings,
+            "chat.agentSkillsLocations",
+            "~/.claude/skills",
+            False,
+        )
+
+    if "agents_skills" in disabled_compat:
+        update_vscode_location_setting(
+            settings,
+            "chat.agentSkillsLocations",
+            ".agents/skills",
+            False,
+        )
+        update_vscode_location_setting(
+            settings,
+            "chat.agentSkillsLocations",
+            "~/.agents/skills",
+            False,
+        )
+
+    if install_native_hooks and config["scope"] == "user":
+        update_vscode_location_setting(
+            settings,
+            "chat.hookFilesLocations",
+            resolve_vscode_hook_location(config["root"], config["scope"]),
+            True,
+        )
+
+    settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+    return settings_path
+
+
 def install_vscode_hooks(config):
     hook_entry = build_vscode_continuous_learning_hook_entry(
         config["root"],
@@ -463,40 +610,61 @@ def install_vscode_hooks(config):
     }
     hook_path.write_text(json.dumps(hook_config, indent=2) + "\n", encoding="utf-8")
 
-    settings_path = config["settings_path"]
-    settings_path.parent.mkdir(parents=True, exist_ok=True)
-    if settings_path.exists():
-        settings = load_jsonc_file(settings_path)
-    else:
-        settings = {}
-
-    hook_locations = settings.setdefault("chat.hookFilesLocations", {})
-    hook_locations[resolve_vscode_hook_location(config["root"], config["scope"])] = True
-
-    settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
     return hook_path
 
 
-def install_vscode_resources(config):
+def install_vscode_resources(config, skipped_categories):
     root = config["root"]
     skills_dir = root / "skills"
     agents_dir = root / "agents"
 
-    install_vscode_core(config)
-    install_vscode_flat_skills(SOURCE_DIR / "workflows", skills_dir)
-    install_vscode_flat_skills(SOURCE_DIR / "skills", skills_dir)
-    install_vscode_skill_directories(SOURCE_DIR / "skills", skills_dir)
-    print(f"  [v] Category 'workflows' installed to {skills_dir}")
-    print(f"  [v] Category 'skills' installed to {skills_dir}")
+    if "core" not in skipped_categories:
+        install_vscode_core(config)
+    else:
+        print("  [~] Category 'core' skipped")
 
-    install_vscode_agents(agents_dir)
-    print(f"  [v] Category 'subagents' installed to {agents_dir}")
+    if "workflows" not in skipped_categories:
+        install_vscode_flat_skills(SOURCE_DIR / "workflows", skills_dir)
+        print(f"  [v] Category 'workflows' installed to {skills_dir}")
+    else:
+        print("  [~] Category 'workflows' skipped")
 
-    hook_output = install_vscode_hooks(config)
-    print(f"  [v] Category 'hooks' installed to {hook_output.parent}")
+    if "skills" not in skipped_categories:
+        install_vscode_flat_skills(SOURCE_DIR / "skills", skills_dir)
+        install_vscode_skill_directories(SOURCE_DIR / "skills", skills_dir)
+        print(f"  [v] Category 'skills' installed to {skills_dir}")
+    else:
+        print("  [~] Category 'skills' skipped")
+
+    if "subagents" not in skipped_categories:
+        install_vscode_agents(agents_dir)
+        print(f"  [v] Category 'subagents' installed to {agents_dir}")
+    else:
+        print("  [~] Category 'subagents' skipped")
+
+    if "hooks" not in skipped_categories:
+        hook_output = install_vscode_hooks(config)
+        print(f"  [v] Category 'hooks' installed to {hook_output.parent}")
+    else:
+        print("  [~] Category 'hooks' skipped")
+
+    settings_path = patch_vscode_settings(
+        config,
+        install_native_hooks=("hooks" not in skipped_categories),
+    )
+    if config.get("disabled_compat") or ("hooks" not in skipped_categories and config["scope"] == "user"):
+        print(f"  [v] VS Code settings updated at {settings_path}")
 
 
-def setup_resources(project_root, selected_targets, vscode_scope, vscode_home, vscode_settings):
+def setup_resources(
+    project_root,
+    selected_targets,
+    vscode_scope,
+    vscode_home,
+    vscode_settings,
+    skip_map,
+    vscode_disabled_compat,
+):
     print("--- STARTING DEEP AGENT SETUP (RECURSIVE REWRITE) ---")
     
     if not SOURCE_DIR.exists():
@@ -504,6 +672,7 @@ def setup_resources(project_root, selected_targets, vscode_scope, vscode_home, v
         return
 
     targets = build_targets(project_root, vscode_scope, vscode_home, vscode_settings)
+    targets["VSCode_Copilot"]["disabled_compat"] = set(vscode_disabled_compat)
 
     # 1. PREPARE RESOURCES (Scan all files)
     # We will copy category by category
@@ -516,12 +685,16 @@ def setup_resources(project_root, selected_targets, vscode_scope, vscode_home, v
         print(f"\nProcessing {ide}...")
         root = config["root"]
         replacement_base = config["path_replacement"]
+        skipped_categories = skip_map.get(TARGET_NAME_MAP[ide], set())
 
         if ide == "VSCode_Copilot":
-            install_vscode_resources(config)
+            install_vscode_resources(config, skipped_categories)
             continue
         
         for category in categories:
+            if category in skipped_categories:
+                print(f"  [~] Category '{category}' skipped")
+                continue
             src_category_dir = SOURCE_DIR / category
             if not src_category_dir.exists(): continue
 
@@ -598,6 +771,8 @@ def setup_resources(project_root, selected_targets, vscode_scope, vscode_home, v
 if __name__ == "__main__":
     args = parse_args()
     selected_targets = parse_targets(args.targets)
+    skip_map = parse_skip_map(args.skip_map)
+    vscode_disabled_compat = parse_vscode_disable_compat(args.vscode_disable_compat)
     project_root = (
         Path(args.project_root).expanduser().resolve()
         if args.project_root
@@ -609,4 +784,6 @@ if __name__ == "__main__":
         args.vscode_scope,
         args.vscode_home,
         args.vscode_settings,
+        skip_map,
+        vscode_disabled_compat,
     )

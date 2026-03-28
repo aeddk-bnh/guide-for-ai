@@ -3,6 +3,7 @@ import os
 import shutil
 import subprocess
 import sys
+from collections import defaultdict
 from pathlib import Path
 
 
@@ -31,6 +32,12 @@ TARGET_ALIASES = {
     "vscode-copilot": "vscode",
     "gemini-cli": "gemini",
 }
+HARD_CONFLICT_WARNING_CURSOR = (
+    "Cursor docs indicate it will read both project `AGENTS.md` and `CLAUDE.md`. "
+    "When `cursor`, `claude`, and a repo-scoped AGENTS consumer are installed "
+    "together, installer dedupe cannot prevent Cursor from seeing both instruction "
+    "files."
+)
 
 
 def parse_args():
@@ -108,6 +115,15 @@ def parse_args():
         action="store_true",
         help="Install Codex skills that are skipped by default in setup_codex_env.py.",
     )
+    parser.add_argument(
+        "--dedupe",
+        choices=("auto", "off"),
+        default="auto",
+        help=(
+            "Conflict handling mode for targets with shared discovery paths. "
+            "Defaults to `auto`."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -165,6 +181,144 @@ def repackage_flat_markdown_skills(target_dir):
 
 def run_manage_config(*extra_args):
     run_python(MANAGE_CONFIG, *extra_args)
+
+
+def write_text_file(path, content):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+
+
+def install_shared_agents_md(destination):
+    write_text_file(destination, CORE_FILE.read_text(encoding="utf-8"))
+
+
+def install_folder_skill(skill_name, target_dir, path_fix_root=None):
+    source_dir = SKILLS_DIR / skill_name
+    if not source_dir.exists():
+        return None
+
+    destination = target_dir / skill_name
+    shutil.copytree(source_dir, destination, dirs_exist_ok=True)
+
+    if path_fix_root:
+        run_manage_config(
+            "fix-skill-paths",
+            str(destination),
+            str(path_fix_root),
+        )
+
+    return destination
+
+
+def remove_path_if_exists(path):
+    if path.is_dir():
+        shutil.rmtree(path)
+    elif path.exists():
+        path.unlink()
+
+
+def managed_common_skill_names():
+    names = {path.stem for path in SKILLS_DIR.glob("*.md")}
+    names.update(path.stem for path in WORKFLOWS_DIR.glob("*.md"))
+    return names
+
+
+def cleanup_managed_common_skills(target_dir, exclude=()):
+    excluded = set(exclude)
+    for skill_name in managed_common_skill_names():
+        if skill_name in excluded:
+            continue
+        remove_path_if_exists(target_dir / skill_name)
+        remove_path_if_exists(target_dir / f"{skill_name}.md")
+
+
+def has_repo_agents_provider(targets, args):
+    return (
+        ("codex" in targets and args.codex_scope == "repo")
+        or ("opencode" in targets and args.opencode_scope == "repo")
+    )
+
+
+def count_repo_agents_consumers(targets, args):
+    count = 0
+    if "cursor" in targets:
+        count += 1
+    if "vscode" in targets and args.vscode_scope == "repo":
+        count += 1
+    if "codex" in targets and args.codex_scope == "repo":
+        count += 1
+    if "opencode" in targets and args.opencode_scope == "repo":
+        count += 1
+    return count
+
+
+def compute_dedupe_plan(args, targets):
+    plan = {
+        "skip_map": defaultdict(set),
+        "vscode_disable_compat": set(),
+        "warnings": [],
+        "repo_shared_agents_md": False,
+        "opencode_skip_instructions": False,
+        "opencode_common_skills_mode": "native",
+        "codex_skip_instructions": False,
+    }
+
+    if args.dedupe == "off":
+        return plan
+
+    repo_shared_agents_md = has_repo_agents_provider(targets, args) and count_repo_agents_consumers(targets, args) >= 2
+    plan["repo_shared_agents_md"] = repo_shared_agents_md
+
+    if "vscode" in targets:
+        if "claude" in targets:
+            plan["vscode_disable_compat"].update({"claude_md", "claude_skills"})
+        if "codex" in targets:
+            plan["vscode_disable_compat"].add("agents_skills")
+        if repo_shared_agents_md:
+            plan["vscode_disable_compat"].add("agents_md")
+
+    if "cursor" in targets:
+        if "claude" in targets or repo_shared_agents_md:
+            plan["skip_map"]["cursor"].add("core")
+        if "claude" in targets and repo_shared_agents_md:
+            plan["warnings"].append(HARD_CONFLICT_WARNING_CURSOR)
+
+    if "opencode" in targets:
+        if "codex" in targets:
+            plan["opencode_common_skills_mode"] = "agents_shared"
+        elif "claude" in targets:
+            plan["opencode_common_skills_mode"] = "claude_shared"
+            plan["opencode_skip_instructions"] = True
+
+        if repo_shared_agents_md and args.opencode_scope == "repo":
+            plan["opencode_skip_instructions"] = True
+
+        if "codex" in targets and "claude" in targets:
+            plan["warnings"].append(
+                "OpenCode docs provide an environment toggle for Claude compatibility, "
+                "but not a persisted config switch for `.claude/skills`. In the "
+                "`claude + codex + opencode` combination, OpenCode may still see "
+                "shared Claude skills unless it is launched with "
+                "`OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1`."
+            )
+
+    if repo_shared_agents_md and "codex" in targets and args.codex_scope == "repo":
+        plan["codex_skip_instructions"] = True
+
+    return plan
+
+
+def format_skip_map(skip_map):
+    parts = []
+    for target in sorted(skip_map):
+        categories = sorted(skip_map[target])
+        if categories:
+            parts.append(f"{target}:{','.join(categories)}")
+    return ";".join(parts)
+
+
+def format_csv(values):
+    return ",".join(sorted(values))
 
 
 def install_recursive_skills(
@@ -240,10 +394,13 @@ def main():
     project_root = default_project_root(args)
     user_home = Path(os.path.expanduser("~")).resolve()
     targets = parse_targets(args.targets)
+    dedupe_plan = compute_dedupe_plan(args, targets)
 
     print("--- STARTING UNIFIED INSTALL ---")
     print(f"Project root: {project_root}")
     print(f"Targets: {', '.join(targets)}")
+    if args.dedupe == "auto":
+        print("Dedupe mode: auto")
 
     classic_targets = [target for target in ("cursor", "vscode", "claude", "antigravity") if target in targets]
     if classic_targets:
@@ -259,25 +416,69 @@ def main():
                 classic_args.extend(["--vscode-home", args.vscode_home])
             if args.vscode_settings:
                 classic_args.extend(["--vscode-settings", args.vscode_settings])
+            if dedupe_plan["vscode_disable_compat"]:
+                classic_args.extend(
+                    ["--vscode-disable-compat", format_csv(dedupe_plan["vscode_disable_compat"])]
+                )
+        skip_map_arg = format_skip_map(dedupe_plan["skip_map"])
+        if skip_map_arg:
+            classic_args.extend(["--skip-map", skip_map_arg])
         run_python(SETUP_CLASSIC, *classic_args)
 
     claude_root = user_home / ".claude"
     opencode_root = resolve_opencode_root(args, project_root, user_home)
     antigravity_root = user_home / ".gemini" / "antigravity"
 
+    if dedupe_plan["repo_shared_agents_md"]:
+        install_shared_agents_md(project_root / "AGENTS.md")
+        print(f"[dedupe] Installed shared repo instruction file at {project_root / 'AGENTS.md'}")
+    if "core" in dedupe_plan["skip_map"].get("cursor", set()):
+        cursor_core = project_root / ".cursorrules"
+        if cursor_core.exists():
+            remove_path_if_exists(cursor_core)
+            print(f"[dedupe] Removed redundant Cursor core file at {cursor_core}")
+
     if "claude" in targets:
         install_recursive_skills(claude_root / "skills")
         install_markdown_agents(claude_root / "agents")
 
     if "opencode" in targets:
-        install_opencode_instructions(
-            resolve_opencode_instruction_path(args, project_root, opencode_root)
-        )
-        install_recursive_skills(
-            opencode_root / "skills",
-            repackage_markdown_files=True,
-            extra_markdown_skill_sources=(WORKFLOWS_DIR,),
-        )
+        if not dedupe_plan["opencode_skip_instructions"]:
+            install_opencode_instructions(
+                resolve_opencode_instruction_path(args, project_root, opencode_root)
+            )
+        else:
+            if (
+                dedupe_plan["opencode_common_skills_mode"] == "claude_shared"
+                and not (dedupe_plan["repo_shared_agents_md"] and args.opencode_scope == "repo")
+            ):
+                instruction_path = resolve_opencode_instruction_path(args, project_root, opencode_root)
+                if instruction_path.exists():
+                    remove_path_if_exists(instruction_path)
+            print("[dedupe] Skipped native OpenCode instructions in favor of a shared instruction surface")
+
+        if dedupe_plan["opencode_common_skills_mode"] == "native":
+            install_recursive_skills(
+                opencode_root / "skills",
+                repackage_markdown_files=True,
+                extra_markdown_skill_sources=(WORKFLOWS_DIR,),
+            )
+        elif dedupe_plan["opencode_common_skills_mode"] == "agents_shared":
+            cleanup_managed_common_skills(opencode_root / "skills")
+            remove_path_if_exists(opencode_root / "skills" / "continuous-learning-v2")
+            special_skill = install_folder_skill(
+                "continuous-learning-v2",
+                opencode_root / "skills",
+                path_fix_root=opencode_root,
+            )
+            print("[dedupe] Reused shared `.agents/skills` for OpenCode common skills")
+            if special_skill:
+                print(f"[dedupe] Installed OpenCode-native special skill at {special_skill}")
+        elif dedupe_plan["opencode_common_skills_mode"] == "claude_shared":
+            cleanup_managed_common_skills(opencode_root / "skills")
+            remove_path_if_exists(opencode_root / "skills" / "continuous-learning-v2")
+            print("[dedupe] Reused Claude-compatible skills for OpenCode")
+
         install_markdown_agents(opencode_root / "agents", apply_opencode_format=True)
 
     if "antigravity" in targets:
@@ -297,6 +498,8 @@ def main():
             codex_args.extend(["--skills-home", args.skills_home])
         if args.include_experimental_codex:
             codex_args.append("--include-experimental")
+        if dedupe_plan["codex_skip_instructions"]:
+            codex_args.append("--skip-instructions")
 
         run_python(SETUP_CODEX, *codex_args)
 
@@ -319,6 +522,8 @@ def main():
         print(f"Installed Codex assets with scope: {args.codex_scope}")
     if "gemini" in targets:
         print(f"Installed Gemini CLI assets with scope: {args.gemini_scope}")
+    for warning in dedupe_plan["warnings"]:
+        print(f"[warn] {warning}")
 
 
 if __name__ == "__main__":

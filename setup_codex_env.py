@@ -53,6 +53,21 @@ def parse_args():
         action="store_true",
         help="Also install folder skills that are marked as incompatible with Codex.",
     )
+    parser.add_argument(
+        "--skip-instructions",
+        action="store_true",
+        help="Skip installing AGENTS.md.",
+    )
+    parser.add_argument(
+        "--skip-skills",
+        action="store_true",
+        help="Skip installing Codex skills.",
+    )
+    parser.add_argument(
+        "--skip-agents",
+        action="store_true",
+        help="Skip installing Codex custom agents.",
+    )
     return parser.parse_args()
 
 
@@ -332,25 +347,44 @@ def main():
     targets["skills_root"].mkdir(parents=True, exist_ok=True)
     targets["agents_root"].mkdir(parents=True, exist_ok=True)
 
-    core_body = CORE_FILE.read_text(encoding="utf-8")
-    write_text_file(
-        targets["agents_md"],
-        render_agents_md(core_body),
-    )
+    installed_markdown_skills = []
+    installed_folder_skills = []
+    installed_workflows = []
+    installed_agents = []
+    skipped_skills = []
 
-    installed_markdown_skills = install_markdown_skills(targets["skills_root"])
-    installed_folder_skills, skipped_skills = install_folder_skills(
-        targets["skills_root"],
-        include_experimental=args.include_experimental,
-    )
-    installed_workflows = install_workflows_as_skills(targets["skills_root"])
-    installed_agents = install_subagents(targets["agents_root"])
+    if not args.skip_instructions:
+        core_body = CORE_FILE.read_text(encoding="utf-8")
+        write_text_file(
+            targets["agents_md"],
+            render_agents_md(core_body),
+        )
+
+    if not args.skip_skills:
+        installed_markdown_skills = install_markdown_skills(targets["skills_root"])
+        installed_folder_skills, skipped_skills = install_folder_skills(
+            targets["skills_root"],
+            include_experimental=args.include_experimental,
+        )
+        installed_workflows = install_workflows_as_skills(targets["skills_root"])
+
+    if not args.skip_agents:
+        installed_agents = install_subagents(targets["agents_root"])
 
     print("--- CODEX INSTALL COMPLETE ---")
     print(f"Scope: {targets['scope']}")
-    print(f"Instruction file: {targets['agents_md']}")
-    print(f"Skills root: {targets['skills_root']}")
-    print(f"Agents root: {targets['agents_root']}")
+    print(
+        f"Instruction file: {targets['agents_md']}"
+        + (" (skipped)" if args.skip_instructions else "")
+    )
+    print(
+        f"Skills root: {targets['skills_root']}"
+        + (" (skipped)" if args.skip_skills else "")
+    )
+    print(
+        f"Agents root: {targets['agents_root']}"
+        + (" (skipped)" if args.skip_agents else "")
+    )
     print(
         "Installed assets: "
         f"{len(installed_markdown_skills)} markdown skills, "
