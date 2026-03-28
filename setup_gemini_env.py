@@ -92,6 +92,16 @@ def normalize_text(text):
     return text.replace("\r\n", "\n").strip() + "\n"
 
 
+def require_description(metadata, source_path):
+    description = str(metadata.get("description", "")).strip()
+    if not description:
+        raise SystemExit(
+            f"Gemini install requires frontmatter field 'description' in source file: "
+            f"{source_path}"
+        )
+    return description
+
+
 def adapt_content_for_gemini(text):
     content = text.replace("\r\n", "\n")
 
@@ -106,10 +116,10 @@ def adapt_content_for_gemini(text):
     )
 
     replacements = {
-        r"\bsearch_web\b": "Gemini CLI's built-in web search",
-        r"\bread_url_content\b": "Gemini CLI's built-in web fetch tools",
-        r"\bbrowser_subagent\b": "a focused custom command or dedicated Gemini CLI session",
-        r"\buser_rules\b": "loaded GEMINI.md context",
+        r"\bsearch_web\b": "google_web_search",
+        r"\bread_url_content\b": "web_fetch",
+        r"\bbrowser_subagent\b": "extension or MCP tool with the required capabilities",
+        r"\buser_rules\b": "current GEMINI.md context",
     }
 
     for pattern, replacement in replacements.items():
@@ -118,65 +128,89 @@ def adapt_content_for_gemini(text):
     return normalize_text(content)
 
 
-def render_skill_writer_prompt():
-    return normalize_text(
-        """# GEMINI CLI COMMAND WRITER WORKFLOW
+def adapt_skill_writer_prompt(body):
+    content = body.replace(
+        "`SKILL.md` files in `.gemini/antigravity/skills/<skill_name>/`",
+        "Gemini CLI custom command files in `.gemini/commands/skills/<command_name>.toml`",
+    )
+    content = content.replace(
+        "1. **Target:** `.gemini/antigravity/skills/<skill_name>/`\n"
+        "2. **Action:** Create directory and `SKILL.md`.",
+        "1. **Target:** `.gemini/commands/skills/<command_name>.toml`\n"
+        "2. **Action:** Create or update a single TOML command file.",
+    )
+    content = content.replace(
+        "File MUST start with YAML frontmatter:",
+        "File MUST be valid TOML and include:",
+    )
+    content = content.replace(
+        """```markdown
+---
+name: <snake_case_name>
+description: <One-line summary>
+---
 
-## PURPOSE
-Generate high-quality, executable Gemini CLI custom command files in `.gemini/commands/skills/<command_name>.toml`.
+# <Human Readable Name>
 
-## 1. INPUT COLLECTION
-- Define: Purpose, Inputs, Expected behavior, Environment, Constraints.
-- **Rule:** If key input is missing -> STOP and ask the user for a concrete clarification.
+## Description
+<What/Why/When>
 
-## 2. OUTPUT LOCATION (RULE)
-1. **Target:** `.gemini/commands/skills/<command_name>.toml`
-2. **Action:** Create or update a single TOML command definition file.
-3. **Naming:** Use a short kebab-case filename so the final command is easy to invoke as `/skills:<command_name>`.
+## Prerequisites
+- <Tools/Dependencies>
 
-## 3. FILE TEMPLATE (MANDATORY)
-File MUST be valid TOML and include:
+## Detailed Instructions
+<Step-by-step logic>
 
-```toml
+## Inputs
+- <Name>: <Type> - <Desc>
+
+## Outputs
+- <Name>: <Type> - <Desc>
+
+## Constraints
+- <Must/Must Not>
+
+## Failure Handling
+- <Recovery steps>
+```""",
+        """```toml
 description = "One-line summary shown in /help"
 
 prompt = '''
-# Role
-You are ...
+# <Human Readable Name>
 
-## Goal
-...
+## Description
+<What/Why/When>
+
+## Prerequisites
+- <Tools/Dependencies>
+
+## Detailed Instructions
+<Step-by-step logic>
 
 ## Inputs
-...
+- <Name>: <Type> - <Desc>
+
+## Outputs
+- <Name>: <Type> - <Desc>
 
 ## Constraints
-...
+- <Must/Must Not>
 
-## Steps
-1. ...
-2. ...
-3. ...
+## Failure Handling
+- <Recovery steps>
 '''
-```
-
-## 4. GEMINI CLI RULES
-- Keep the reusable instructions inside `prompt`.
-- Put the short summary in `description`.
-- If arguments are needed, explicitly design for Gemini CLI command arguments.
-- Prefer project-relative paths inside the prompt.
-- Do not emit Markdown frontmatter or `SKILL.md` scaffolding.
-
-## 5. VALIDATION CHECKLIST
-- [ ] TOML syntax valid?
-- [ ] `description` concise and clear?
-- [ ] `prompt` executable and specific?
-- [ ] Command filename and namespace correct?
-- [ ] No vague or marketing-heavy language?
-
-**CORRECTION:** If validation fails -> Refactor -> Re-check.
-"""
+```""",
     )
+    content = content.replace(
+        "- [ ] YAML Frontmatter valid?",
+        "- [ ] TOML syntax valid?",
+    )
+    content = content.replace(
+        "- [ ] Folder created correctly?",
+        "- [ ] Command file created at the correct path?",
+    )
+    return normalize_text(content)
 
 
 def render_command_toml(description, prompt):
@@ -212,14 +246,10 @@ def install_commands_from_markdown(source_dir, commands_root, namespace):
     for source_file in sorted(source_dir.glob("*.md")):
         metadata, body = parse_frontmatter(source_file.read_text(encoding="utf-8"))
         command_name = sanitize_name(source_file.stem)
-        description = metadata.get(
-            "description",
-            f"Reusable prompt for `{command_name}`.",
-        )
+        description = require_description(metadata, source_file)
         prompt_body = body
         if namespace == "workflows" and command_name == "skill-writer":
-            description = "Create Gemini CLI custom commands in TOML format."
-            prompt_body = render_skill_writer_prompt()
+            prompt_body = adapt_skill_writer_prompt(body)
         destination = commands_root / namespace / f"{command_name}.toml"
         content = render_command_toml(description, prompt_body)
         validate_toml(content, source_file.name)

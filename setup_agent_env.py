@@ -287,6 +287,43 @@ def adapt_vscode_markdown(content, add_user_frontmatter=False):
     return updated
 
 
+def ensure_vscode_skill_frontmatter(content, skill_name, source_label):
+    match = re.match(r"^---\s*\n(.*?)\n---\s*\n?", content, re.DOTALL)
+    if match:
+        frontmatter_lines = match.group(1).splitlines()
+        body = content[match.end():].lstrip("\n")
+    else:
+        frontmatter_lines = []
+        body = content.lstrip("\n")
+
+    normalized_lines = []
+    has_name = False
+    has_description = False
+
+    for line in frontmatter_lines:
+        if re.match(r"^\s*name\s*:", line):
+            normalized_lines.append(f"name: {skill_name}")
+            has_name = True
+            continue
+        if re.match(r"^\s*description\s*:", line):
+            normalized_lines.append(line)
+            has_description = True
+            continue
+        if line.strip():
+            normalized_lines.append(line)
+
+    if not has_name:
+        normalized_lines.insert(0, f"name: {skill_name}")
+
+    if not has_description:
+        raise SystemExit(
+            f"VS Code skill source is missing required frontmatter field "
+            f"'description': {source_label}"
+        )
+
+    return "---\n" + "\n".join(normalized_lines) + "\n---\n\n" + body
+
+
 def install_vscode_core(config):
     root = config["root"]
     scope = config["scope"]
@@ -310,6 +347,11 @@ def install_vscode_flat_skills(source_dir, dest_dir):
         skill_dir = dest_dir / src_file.stem
         skill_dir.mkdir(parents=True, exist_ok=True)
         content = adapt_vscode_markdown(src_file.read_text(encoding="utf-8"))
+        content = ensure_vscode_skill_frontmatter(
+            content,
+            src_file.stem,
+            str(src_file),
+        )
         (skill_dir / "SKILL.md").write_text(content, encoding="utf-8")
 
 
@@ -323,6 +365,14 @@ def install_vscode_skill_directories(source_dir, dest_dir):
 
         target_dir = dest_dir / src_dir.name
         shutil.copytree(src_dir, target_dir, dirs_exist_ok=True)
+        skill_file = target_dir / "SKILL.md"
+        skill_content = adapt_vscode_markdown(skill_file.read_text(encoding="utf-8"))
+        skill_content = ensure_vscode_skill_frontmatter(
+            skill_content,
+            src_dir.name,
+            str(src_dir / "SKILL.md"),
+        )
+        skill_file.write_text(skill_content, encoding="utf-8")
 
 
 def install_vscode_agents(dest_dir):
@@ -343,19 +393,16 @@ def install_vscode_agents(dest_dir):
         )
 
 
-def build_vscode_continuous_learning_hook_entry(scope):
-    if scope == "repo":
-        skill_dir = ".github/skills/continuous-learning-v2"
-        runtime_home = ".github/.continuous-learning-v2"
-        windows_command = "python .github\\skills\\continuous-learning-v2\\hooks\\observe.py"
-        posix_command = "python3 .github/skills/continuous-learning-v2/hooks/observe.py"
-    else:
-        skill_dir = "~/.copilot/skills/continuous-learning-v2"
-        runtime_home = "~/.copilot/continuous-learning-v2"
-        windows_command = (
-            "python %USERPROFILE%\\.copilot\\skills\\continuous-learning-v2\\hooks\\observe.py"
-        )
-        posix_command = "python3 ~/.copilot/skills/continuous-learning-v2/hooks/observe.py"
+def build_vscode_continuous_learning_hook_entry(root, scope):
+    skill_path = (root / "skills" / CONTINUOUS_LEARNING_SKILL / "hooks" / "observe.py").resolve()
+    runtime_home_path = (
+        (root.parent / ".continuous-learning-v2").resolve()
+        if scope == "repo"
+        else (root / CONTINUOUS_LEARNING_SKILL).resolve()
+    )
+
+    windows_command = f'python "{skill_path}"'
+    posix_command = f'python3 "{skill_path.as_posix()}"'
 
     hook_entry = {
         "type": "command",
@@ -364,8 +411,8 @@ def build_vscode_continuous_learning_hook_entry(scope):
         "linux": posix_command,
         "osx": posix_command,
         "env": {
-            "CONTINUOUS_LEARNING_HOME": runtime_home,
-            "CONTINUOUS_LEARNING_SKILL_DIR": skill_dir,
+            "CONTINUOUS_LEARNING_HOME": str(runtime_home_path),
+            "CONTINUOUS_LEARNING_SKILL_DIR": str(skill_path.parent.parent),
         },
     }
 
@@ -387,7 +434,10 @@ def resolve_vscode_hook_location(root, scope):
 
 
 def install_vscode_hooks(config):
-    hook_entry = build_vscode_continuous_learning_hook_entry(config["scope"])
+    hook_entry = build_vscode_continuous_learning_hook_entry(
+        config["root"],
+        config["scope"],
+    )
 
     if config["scope"] == "repo":
         hooks_dir = config["root"] / "hooks"

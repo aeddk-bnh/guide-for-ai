@@ -110,6 +110,16 @@ def normalize_text(text):
     return text.replace("\r\n", "\n").strip() + "\n"
 
 
+def require_description(metadata, source_path):
+    description = str(metadata.get("description", "")).strip()
+    if not description:
+        raise SystemExit(
+            f"Codex install requires frontmatter field 'description' in source file: "
+            f"{source_path}"
+        )
+    return description
+
+
 def adapt_content_for_codex(text):
     content = text.replace("\r\n", "\n")
 
@@ -125,28 +135,15 @@ def adapt_content_for_codex(text):
 
     replacements = {
         r"\bsearch_web\b": "web search",
-        r"\bread_url_content\b": "documentation or web-page fetch tools",
-        r"\bbrowser_subagent\b": "a dedicated subagent with browser/computer-use tools",
-        r"\buser_rules\b": "the active instruction stack",
+        r"\bread_url_content\b": "web search",
+        r"\bbrowser_subagent\b": "subagent with computer use",
+        r"\buser_rules\b": "current AGENTS.md context",
     }
 
     for pattern, replacement in replacements.items():
         content = re.sub(pattern, replacement, content)
 
     return normalize_text(content)
-
-
-def workflow_description(stem, source_description):
-    if source_description:
-        return (
-            f"Use when the task specifically needs the repository's `{stem}` workflow. "
-            f"{source_description.rstrip('.')}."
-        )
-    return (
-        f"Use when the task specifically needs the repository's `{stem}` workflow and "
-        "its step-by-step operating procedure."
-    )
-
 
 def render_skill_markdown(name, description, body):
     parts = [
@@ -210,10 +207,7 @@ def install_markdown_skills(skill_root):
     for src_file in sorted(SKILLS_DIR.glob("*.md")):
         metadata, body = parse_frontmatter(src_file.read_text(encoding="utf-8"))
         skill_name = sanitize_name(metadata.get("name", src_file.stem))
-        description = metadata.get(
-            "description",
-            f"Use when the task specifically matches the `{skill_name}` skill.",
-        )
+        description = require_description(metadata, src_file)
 
         dest_dir = skill_root / skill_name
         write_text_file(
@@ -251,7 +245,7 @@ def install_workflows_as_skills(skill_root):
     for src_file in sorted(WORKFLOWS_DIR.glob("*.md")):
         metadata, body = parse_frontmatter(src_file.read_text(encoding="utf-8"))
         skill_name = sanitize_name(src_file.stem)
-        description = workflow_description(skill_name, metadata.get("description", ""))
+        description = require_description(metadata, src_file)
         dest_dir = skill_root / skill_name
 
         write_text_file(
@@ -273,10 +267,7 @@ def install_subagents(agent_root):
     for src_file in sorted(SUBAGENTS_DIR.glob("*.md")):
         metadata, body = parse_frontmatter(src_file.read_text(encoding="utf-8"))
         agent_name = sanitize_name(src_file.stem.replace("-", "_"))
-        description = metadata.get(
-            "description",
-            f"Custom agent for `{agent_name}`.",
-        )
+        description = require_description(metadata, src_file)
         allowed_tools = metadata.get("tools", [])
         disallowed_tools = metadata.get("disallowedTools", [])
 
