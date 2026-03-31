@@ -16,6 +16,7 @@ SUBAGENTS_DIR = SOURCE_DIR / "subagents"
 MANAGE_CONFIG = SOURCE_DIR / "manage_agent_config.py"
 SETUP_CLASSIC = SCRIPT_DIR / "setup_agent_env.py"
 SETUP_CODEX = SCRIPT_DIR / "setup_codex_env.py"
+SETUP_KILO = SCRIPT_DIR / "setup_kilo_env.py"
 SETUP_GEMINI = SCRIPT_DIR / "setup_gemini_env.py"
 
 ALL_TARGETS = (
@@ -25,11 +26,14 @@ ALL_TARGETS = (
     "opencode",
     "antigravity",
     "codex",
+    "kilo",
     "gemini",
 )
 TARGET_ALIASES = {
     "vscode_copilot": "vscode",
     "vscode-copilot": "vscode",
+    "kilocode": "kilo",
+    "kilo-code": "kilo",
     "gemini-cli": "gemini",
 }
 HARD_CONFLICT_WARNING_CURSOR = (
@@ -59,7 +63,7 @@ def parse_args():
         help=(
             "Install target list. Use a single value with `--target` or a comma-"
             "separated list with `--targets`. Supported values: "
-            "cursor,vscode,claude,opencode,antigravity,codex,gemini,all"
+            "cursor,vscode,claude,opencode,antigravity,codex,kilo,gemini,all"
         ),
     )
     parser.add_argument(
@@ -99,6 +103,20 @@ def parse_args():
     parser.add_argument(
         "--skills-home",
         help="Optional override for the user-level Codex skills path.",
+    )
+    parser.add_argument(
+        "--kilo-scope",
+        choices=("repo", "user"),
+        default="user",
+        help="Scope to use when installing Kilo assets. Defaults to global user scope.",
+    )
+    parser.add_argument(
+        "--kilo-config-home",
+        help="Optional override for the Kilo config directory used by `--kilo-scope user`.",
+    )
+    parser.add_argument(
+        "--kilo-skills-home",
+        help="Optional override for the Kilo skills home used by `--kilo-scope user`.",
     )
     parser.add_argument(
         "--gemini-scope",
@@ -236,6 +254,7 @@ def has_repo_agents_provider(targets, args):
     return (
         ("codex" in targets and args.codex_scope == "repo")
         or ("opencode" in targets and args.opencode_scope == "repo")
+        or ("kilo" in targets and args.kilo_scope == "repo")
     )
 
 
@@ -249,10 +268,45 @@ def count_repo_agents_consumers(targets, args):
         count += 1
     if "opencode" in targets and args.opencode_scope == "repo":
         count += 1
+    if "kilo" in targets and args.kilo_scope == "repo":
+        count += 1
     return count
 
 
-def compute_dedupe_plan(args, targets):
+def resolve_codex_skills_root(args, project_root, user_home):
+    if args.codex_scope == "repo":
+        return project_root / ".agents" / "skills"
+    if args.skills_home:
+        return Path(args.skills_home).expanduser().resolve()
+    return user_home / ".agents" / "skills"
+
+
+def resolve_kilo_config_home(args, project_root, user_home):
+    if args.kilo_scope == "repo":
+        return project_root / ".kilo"
+    if args.kilo_config_home:
+        return Path(args.kilo_config_home).expanduser().resolve()
+    return user_home / ".config" / "kilo"
+
+
+def resolve_kilo_skills_root(args, project_root, user_home):
+    if args.kilo_scope == "repo":
+        return project_root / ".kilo" / "skills"
+    skills_home = (
+        Path(args.kilo_skills_home).expanduser().resolve()
+        if args.kilo_skills_home
+        else (user_home / ".kilo").resolve()
+    )
+    return skills_home / "skills"
+
+
+def resolve_kilo_instruction_path(args, project_root, user_home):
+    if args.kilo_scope == "repo":
+        return project_root / "AGENTS.md"
+    return resolve_kilo_config_home(args, project_root, user_home) / "AGENTS.md"
+
+
+def compute_dedupe_plan(args, targets, project_root, user_home):
     plan = {
         "skip_map": defaultdict(set),
         "vscode_disable_compat": set(),
@@ -261,6 +315,9 @@ def compute_dedupe_plan(args, targets):
         "opencode_skip_instructions": False,
         "opencode_common_skills_mode": "native",
         "codex_skip_instructions": False,
+        "kilo_skip_instructions": False,
+        "kilo_skip_skills": False,
+        "kilo_shared_skill_paths": [],
     }
 
     if args.dedupe == "off":
@@ -304,6 +361,19 @@ def compute_dedupe_plan(args, targets):
 
     if repo_shared_agents_md and "codex" in targets and args.codex_scope == "repo":
         plan["codex_skip_instructions"] = True
+
+    if "kilo" in targets:
+        if repo_shared_agents_md and args.kilo_scope == "repo":
+            plan["kilo_skip_instructions"] = True
+        elif "claude" in targets and args.kilo_scope == "user":
+            plan["kilo_skip_instructions"] = True
+
+        if "codex" in targets and args.kilo_scope == args.codex_scope:
+            plan["kilo_skip_skills"] = True
+            if args.kilo_scope == "user":
+                plan["kilo_shared_skill_paths"].append(
+                    resolve_codex_skills_root(args, project_root, user_home)
+                )
 
     return plan
 
@@ -394,7 +464,7 @@ def main():
     project_root = default_project_root(args)
     user_home = Path(os.path.expanduser("~")).resolve()
     targets = parse_targets(args.targets)
-    dedupe_plan = compute_dedupe_plan(args, targets)
+    dedupe_plan = compute_dedupe_plan(args, targets, project_root, user_home)
 
     print("--- STARTING UNIFIED INSTALL ---")
     print(f"Project root: {project_root}")
@@ -428,6 +498,9 @@ def main():
     claude_root = user_home / ".claude"
     opencode_root = resolve_opencode_root(args, project_root, user_home)
     antigravity_root = user_home / ".gemini" / "antigravity"
+    kilo_config_home = resolve_kilo_config_home(args, project_root, user_home)
+    kilo_skills_root = resolve_kilo_skills_root(args, project_root, user_home)
+    kilo_instruction_path = resolve_kilo_instruction_path(args, project_root, user_home)
 
     if dedupe_plan["repo_shared_agents_md"]:
         install_shared_agents_md(project_root / "AGENTS.md")
@@ -503,6 +576,34 @@ def main():
 
         run_python(SETUP_CODEX, *codex_args)
 
+    if "kilo" in targets:
+        kilo_args = ["--scope", args.kilo_scope]
+        if args.kilo_scope == "repo":
+            kilo_args.extend(["--repo-dir", str(project_root)])
+        if args.kilo_config_home:
+            kilo_args.extend(["--kilo-config-home", args.kilo_config_home])
+        if args.kilo_skills_home:
+            kilo_args.extend(["--kilo-skills-home", args.kilo_skills_home])
+        if dedupe_plan["kilo_skip_instructions"]:
+            kilo_args.append("--skip-instructions")
+            if not (dedupe_plan["repo_shared_agents_md"] and args.kilo_scope == "repo") and kilo_instruction_path.exists():
+                remove_path_if_exists(kilo_instruction_path)
+            print("[dedupe] Skipped native Kilo instructions in favor of a shared instruction surface")
+        if dedupe_plan["kilo_skip_skills"]:
+            kilo_args.append("--skip-skills")
+            cleanup_managed_common_skills(kilo_skills_root)
+            remove_path_if_exists(kilo_skills_root / "continuous-learning-v2")
+            print("[dedupe] Reused shared Codex-compatible skills for Kilo common skills")
+        if dedupe_plan["kilo_shared_skill_paths"]:
+            kilo_args.extend(
+                [
+                    "--shared-skill-paths",
+                    format_csv(str(path) for path in dedupe_plan["kilo_shared_skill_paths"]),
+                ]
+            )
+
+        run_python(SETUP_KILO, *kilo_args)
+
     if "gemini" in targets:
         gemini_args = ["--scope", args.gemini_scope]
         if args.gemini_scope == "repo":
@@ -520,6 +621,8 @@ def main():
         print(f"Installed OpenCode assets with scope: {args.opencode_scope}")
     if "codex" in targets:
         print(f"Installed Codex assets with scope: {args.codex_scope}")
+    if "kilo" in targets:
+        print(f"Installed Kilo assets with scope: {args.kilo_scope}")
     if "gemini" in targets:
         print(f"Installed Gemini CLI assets with scope: {args.gemini_scope}")
     for warning in dedupe_plan["warnings"]:
