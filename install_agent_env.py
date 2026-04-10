@@ -16,6 +16,8 @@ SKILLS_DIR = SOURCE_DIR / "skills"
 WORKFLOWS_DIR = SOURCE_DIR / "workflows"
 SUBAGENTS_DIR = SOURCE_DIR / "subagents"
 CLAUDE_STATUSLINE_SOURCE = SOURCE_DIR / "claude" / "statusline.sh"
+CLAUDE_NOTIFY_SOURCE = SOURCE_DIR / "claude" / "notify.sh"
+CLAUDE_NOTIFY_PS1_SOURCE = SOURCE_DIR / "claude" / "notify.ps1"
 MANAGE_CONFIG = SOURCE_DIR / "manage_agent_config.py"
 SETUP_CLASSIC = SCRIPT_DIR / "setup_agent_env.py"
 SETUP_CODEX = SCRIPT_DIR / "setup_codex_env.py"
@@ -360,6 +362,44 @@ def patch_claude_settings_statusline(claude_root):
     return settings_path
 
 
+def install_claude_notification_scripts(claude_root):
+    destination_sh = claude_root / "notify.sh"
+    destination_ps1 = claude_root / "notify.ps1"
+    destination_sh.parent.mkdir(parents=True, exist_ok=True)
+
+    shutil.copy2(CLAUDE_NOTIFY_SOURCE, destination_sh)
+    current_mode = destination_sh.stat().st_mode
+    try:
+        destination_sh.chmod(current_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    except OSError:
+        pass
+
+    shutil.copy2(CLAUDE_NOTIFY_PS1_SOURCE, destination_ps1)
+    return (destination_sh, destination_ps1)
+
+
+def patch_claude_settings_notifications(claude_root):
+    settings_path = claude_root / "settings.json"
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    if settings_path.exists():
+        settings = load_jsonc_file(settings_path)
+    else:
+        settings = {}
+
+    notify_script_path = str((claude_root / "notify.sh").resolve()).replace("\\", "/")
+
+    hooks = settings.setdefault("hooks", {})
+    hooks["Notification"] = [
+        {"matcher": "", "hooks": [{"type": "command", "command": notify_script_path}]}
+    ]
+    hooks["Stop"] = [
+        {"hooks": [{"type": "command", "command": notify_script_path, "async": True}]}
+    ]
+
+    settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+    return settings_path
+
+
 def managed_common_skill_names():
     names = {path.stem for path in SKILLS_DIR.glob("*.md")}
     names.update(path.stem for path in WORKFLOWS_DIR.glob("*.md"))
@@ -588,6 +628,10 @@ def main():
         settings_path = patch_claude_settings_statusline(claude_root)
         print(f"[claude] Installed status line script at {statusline_path}")
         print(f"[claude] Patched Claude settings at {settings_path}")
+        notify_paths = install_claude_notification_scripts(claude_root)
+        notify_settings_path = patch_claude_settings_notifications(claude_root)
+        print(f"[claude] Installed notification scripts at {notify_paths}")
+        print(f"[claude] Configured Claude notifications at {notify_settings_path}")
 
     if "opencode" in targets:
         if not dedupe_plan["opencode_skip_instructions"]:

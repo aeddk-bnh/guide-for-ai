@@ -129,10 +129,11 @@ It is designed to be **IDE-Agnostic** and now ships with one unified installer e
 9. **Reload your IDE / CLI session.** Your AI Agent is now fully updated with the latest protocols!
 
 ## Claude Code Notes
-- Claude installs now also configure a 3-line persistent session status bar at the bottom of the Claude Code terminal by default.
+- Claude installs now also configure a 3-line persistent session status bar at the bottom of the Claude Code terminal by default, as well as desktop notification hooks for when tasks complete or need input.
 - Running `--target claude` or using the installer with no target override (which includes `claude`) writes a Python-backed shell script to `~/.claude/statusline.sh` and merges the `statusLine` configuration key into your `~/.claude/settings.json` file.
-- The installed script deliberately uses Python for JSON parsing to ensure it runs correctly inside Windows Git Bash where `jq` is typically unavailable.
-- The installer writes the status line command as an absolute script path for reliable execution across shells.
+- It also writes `~/.claude/notify.sh` and `notify.ps1` and merges `Notification` and `Stop` hooks into `~/.claude/settings.json` so you get a system notification (and sound) when Claude Code is done running or waiting for input.
+- The installed scripts deliberately use Python for JSON parsing to ensure they run correctly inside Windows Git Bash where `jq` is typically unavailable.
+- The installer writes the command paths as absolute script paths for reliable execution across shells.
 - Unrelated keys in your `settings.json` (such as `model`, `effortLevel`, `permissions`) are safely preserved, but existing JSONC comments in that file are normalized away when the installer rewrites it.
 
 ## Codex Notes
