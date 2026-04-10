@@ -1,6 +1,8 @@
 import argparse
+import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
 from collections import defaultdict
@@ -13,6 +15,7 @@ CORE_FILE = SOURCE_DIR / "core" / "GEMINI.md"
 SKILLS_DIR = SOURCE_DIR / "skills"
 WORKFLOWS_DIR = SOURCE_DIR / "workflows"
 SUBAGENTS_DIR = SOURCE_DIR / "subagents"
+CLAUDE_STATUSLINE_SOURCE = SOURCE_DIR / "claude" / "statusline.sh"
 MANAGE_CONFIG = SOURCE_DIR / "manage_agent_config.py"
 SETUP_CLASSIC = SCRIPT_DIR / "setup_agent_env.py"
 SETUP_CODEX = SCRIPT_DIR / "setup_codex_env.py"
@@ -188,6 +191,116 @@ def write_text_file(path, content):
     path.write_text(content, encoding="utf-8")
 
 
+def strip_jsonc_comments(text):
+    result = []
+    in_string = False
+    escape = False
+    in_single_line_comment = False
+    in_multi_line_comment = False
+    quote_char = ""
+    index = 0
+
+    while index < len(text):
+        char = text[index]
+        next_char = text[index + 1] if index + 1 < len(text) else ""
+
+        if in_single_line_comment:
+            if char == "\n":
+                in_single_line_comment = False
+                result.append(char)
+            index += 1
+            continue
+
+        if in_multi_line_comment:
+            if char == "*" and next_char == "/":
+                in_multi_line_comment = False
+                index += 2
+            else:
+                index += 1
+            continue
+
+        if in_string:
+            result.append(char)
+            if escape:
+                escape = False
+            elif char == "\\":
+                escape = True
+            elif char == quote_char:
+                in_string = False
+            index += 1
+            continue
+
+        if char in {'"', "'"}:
+            in_string = True
+            quote_char = char
+            result.append(char)
+            index += 1
+            continue
+
+        if char == "/" and next_char == "/":
+            in_single_line_comment = True
+            index += 2
+            continue
+
+        if char == "/" and next_char == "*":
+            in_multi_line_comment = True
+            index += 2
+            continue
+
+        result.append(char)
+        index += 1
+
+    return "".join(result)
+
+
+def strip_trailing_commas(text):
+    result = []
+    in_string = False
+    escape = False
+    quote_char = ""
+    index = 0
+
+    while index < len(text):
+        char = text[index]
+
+        if in_string:
+            result.append(char)
+            if escape:
+                escape = False
+            elif char == "\\":
+                escape = True
+            elif char == quote_char:
+                in_string = False
+            index += 1
+            continue
+
+        if char in {'"', "'"}:
+            in_string = True
+            quote_char = char
+            result.append(char)
+            index += 1
+            continue
+
+        if char == ",":
+            lookahead = index + 1
+            while lookahead < len(text) and text[lookahead].isspace():
+                lookahead += 1
+            if lookahead < len(text) and text[lookahead] in "}]":
+                index += 1
+                continue
+
+        result.append(char)
+        index += 1
+
+    return "".join(result)
+
+
+def load_jsonc_file(path):
+    raw = path.read_text(encoding="utf-8")
+    cleaned = strip_trailing_commas(strip_jsonc_comments(raw))
+    return json.loads(cleaned)
+
+
 def install_shared_agents_md(destination):
     write_text_file(destination, CORE_FILE.read_text(encoding="utf-8"))
 
@@ -215,6 +328,36 @@ def remove_path_if_exists(path):
         shutil.rmtree(path)
     elif path.exists():
         path.unlink()
+
+
+def install_claude_statusline_script(claude_root):
+    destination = claude_root / "statusline.sh"
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(CLAUDE_STATUSLINE_SOURCE, destination)
+
+    current_mode = destination.stat().st_mode
+    try:
+        destination.chmod(current_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    except OSError:
+        pass
+    return destination
+
+
+def patch_claude_settings_statusline(claude_root):
+    settings_path = claude_root / "settings.json"
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    if settings_path.exists():
+        settings = load_jsonc_file(settings_path)
+    else:
+        settings = {}
+
+    settings["statusLine"] = {
+        "type": "command",
+        "command": str((claude_root / "statusline.sh").resolve()).replace("\\", "/"),
+        "refreshInterval": 5,
+    }
+    settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+    return settings_path
 
 
 def managed_common_skill_names():
@@ -441,6 +584,10 @@ def main():
     if "claude" in targets:
         install_recursive_skills(claude_root / "skills")
         install_markdown_agents(claude_root / "agents")
+        statusline_path = install_claude_statusline_script(claude_root)
+        settings_path = patch_claude_settings_statusline(claude_root)
+        print(f"[claude] Installed status line script at {statusline_path}")
+        print(f"[claude] Patched Claude settings at {settings_path}")
 
     if "opencode" in targets:
         if not dedupe_plan["opencode_skip_instructions"]:
