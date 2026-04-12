@@ -1,3 +1,5 @@
 npm_dist/
 __pycache__/
 *.pyc
+node_modules/
+.npmrc

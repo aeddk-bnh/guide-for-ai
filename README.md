@@ -24,6 +24,28 @@ It is designed to be **IDE-Agnostic** and now ships with one unified installer e
 - `setup_codex_env.py`: Codex installer backend.
 - `setup_gemini_env.py`: Gemini CLI installer backend.
 
+## 📦 Install via npm
+
+You can also install and run the installer globally via npm:
+
+```bash
+npm install -g guide-for-ai
+```
+
+Once installed, you can run the installer from anywhere:
+
+```bash
+guide-for-ai --target claude
+```
+
+Or use it directly without installation via `npx`:
+
+```bash
+npx guide-for-ai --target claude
+```
+
+---
+
 ## 🚀 How to Use (Install)
 1. **Clone this repo** to your local machine:
    ```bash

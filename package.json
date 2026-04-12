@@ -1,0 +1,46 @@
+{
+  "name": "guide-for-ai",
+  "version": "1.0.0",
+  "description": "Standardized Agent Brain (Rules, Skills, Workflows) for AI Coding Assistants. One installer to configure Cursor, VS Code, Claude, Codex, Gemini, and more.",
+  "main": "cli.js",
+  "bin": {
+    "guide-for-ai": "./cli.js"
+  },
+  "scripts": {
+    "start": "node cli.js"
+  },
+  "files": [
+    ".agent_code/",
+    "cli.js",
+    "install.bat",
+    "install.sh",
+    "install_agent_env.py",
+    "setup_agent_env.py",
+    "setup_codex_env.py",
+    "setup_gemini_env.py",
+    "README.md"
+  ],
+  "keywords": [
+    "claude-code",
+    "cursor",
+    "vscode",
+    "github-copilot",
+    "codex",
+    "gemini-cli",
+    "agent-instructions",
+    "prompt-engineering",
+    "skills",
+    "workflows",
+    "installer"
+  ],
+  "author": "aeddk",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aeddk-bnh/guide-for-ai.git"
+  },
+  "bugs": {
+    "url": "https://github.com/aeddk-bnh/guide-for-ai/issues"
+  },
+  "homepage": "https://github.com/aeddk-bnh/guide-for-ai#readme"
+}
