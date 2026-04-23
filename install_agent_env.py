@@ -365,15 +365,12 @@ def compute_dedupe_plan(args, targets, project_root, user_home):
     if "kilo" in targets:
         if repo_shared_agents_md and args.kilo_scope == "repo":
             plan["kilo_skip_instructions"] = True
-        elif "claude" in targets and args.kilo_scope == "user":
-            plan["kilo_skip_instructions"] = True
 
         if "codex" in targets and args.kilo_scope == args.codex_scope:
             plan["kilo_skip_skills"] = True
-            if args.kilo_scope == "user":
-                plan["kilo_shared_skill_paths"].append(
-                    resolve_codex_skills_root(args, project_root, user_home)
-                )
+            plan["kilo_shared_skill_paths"].append(
+                resolve_codex_skills_root(args, project_root, user_home)
+            )
 
     return plan
 
