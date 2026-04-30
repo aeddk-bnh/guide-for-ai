@@ -18,6 +18,7 @@ SUBAGENTS_DIR = SOURCE_DIR / "subagents"
 CLAUDE_STATUSLINE_SOURCE = SOURCE_DIR / "claude" / "statusline.sh"
 CLAUDE_NOTIFY_SOURCE = SOURCE_DIR / "claude" / "notify.sh"
 CLAUDE_NOTIFY_PS1_SOURCE = SOURCE_DIR / "claude" / "notify.ps1"
+CLAUDE_TOKEN_SAVER_SOURCE = SOURCE_DIR / "claude" / "token_saver.py"
 MANAGE_CONFIG = SOURCE_DIR / "manage_agent_config.py"
 SETUP_CLASSIC = SCRIPT_DIR / "setup_agent_env.py"
 SETUP_CODEX = SCRIPT_DIR / "setup_codex_env.py"
@@ -400,6 +401,63 @@ def patch_claude_settings_notifications(claude_root):
     return settings_path
 
 
+def install_claude_token_saver_script(claude_root):
+    destination = claude_root / "token_saver.py"
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(CLAUDE_TOKEN_SAVER_SOURCE, destination)
+    
+    current_mode = destination.stat().st_mode
+    try:
+        destination.chmod(current_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    except OSError:
+        pass
+    return destination
+
+
+def patch_claude_settings_token_saver(claude_root):
+    settings_path = claude_root / "settings.json"
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    if settings_path.exists():
+        settings = load_jsonc_file(settings_path)
+    else:
+        settings = {}
+
+    import sys
+    python_cmd = sys.executable or "python"
+    token_saver_path = str((claude_root / "token_saver.py").resolve()).replace("\\", "/")
+    
+    command = f'"{python_cmd}" "{token_saver_path}"'
+    
+    hooks = settings.setdefault("hooks", {})
+    
+    # PreCompact hook
+    precompact_list = hooks.setdefault("PreCompact", [])
+    if not any("token_saver.py" in h.get("hooks", [{}])[0].get("command", "") for h in precompact_list if "hooks" in h):
+        precompact_list.append({
+            "matcher": "",
+            "hooks": [{"type": "command", "command": command}]
+        })
+        
+    # PreToolUse hook
+    pretooluse_list = hooks.setdefault("PreToolUse", [])
+    if not any("token_saver.py" in h.get("hooks", [{}])[0].get("command", "") for h in pretooluse_list if "hooks" in h):
+        pretooluse_list.append({
+            "matcher": "",
+            "hooks": [{"type": "command", "command": command}]
+        })
+        
+    # TaskCreated hook
+    taskcreated_list = hooks.setdefault("TaskCreated", [])
+    if not any("token_saver.py" in h.get("hooks", [{}])[0].get("command", "") for h in taskcreated_list if "hooks" in h):
+        taskcreated_list.append({
+            "matcher": "",
+            "hooks": [{"type": "command", "command": command}]
+        })
+        
+    settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+    return settings_path
+
+
 def managed_common_skill_names():
     names = {path.stem for path in SKILLS_DIR.glob("*.md")}
     names.update(path.stem for path in WORKFLOWS_DIR.glob("*.md"))
@@ -632,6 +690,10 @@ def main():
         notify_settings_path = patch_claude_settings_notifications(claude_root)
         print(f"[claude] Installed notification scripts at {notify_paths}")
         print(f"[claude] Configured Claude notifications at {notify_settings_path}")
+        token_saver_path = install_claude_token_saver_script(claude_root)
+        token_settings_path = patch_claude_settings_token_saver(claude_root)
+        print(f"[claude] Installed token saver script at {token_saver_path}")
+        print(f"[claude] Configured Claude token saver hooks at {token_settings_path}")
 
     if "opencode" in targets:
         if not dedupe_plan["opencode_skip_instructions"]:
