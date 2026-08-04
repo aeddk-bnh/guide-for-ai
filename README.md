@@ -44,6 +44,8 @@ Or use it directly without installation via `npx`:
 
 ```bash
 npx guide-for-ai --target claude
+npx guide-for-ai --target kilo
+npx guide-for-ai --target kilo --kilo-scope repo
 ```
 
 ---
@@ -120,6 +122,15 @@ npx guide-for-ai --target claude
    ./install.sh --targets gemini
    ./install.sh --targets cursor,vscode
    ./install.sh --targets claude,opencode,antigravity
+   ```
+   Or via `npx`:
+   ```bash
+   npx guide-for-ai --targets codex
+   npx guide-for-ai --targets kilo
+   npx guide-for-ai --targets kilo --kilo-scope repo
+   npx guide-for-ai --targets gemini
+   npx guide-for-ai --targets cursor,vscode
+   npx guide-for-ai --targets claude,opencode,antigravity
    ```
 
 6. **Codex global vs local:**
