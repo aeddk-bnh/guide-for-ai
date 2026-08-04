@@ -10,6 +10,7 @@ It is designed to be **IDE-Agnostic** and now ships with one unified installer e
     - **Cursor:** Installs as `.cursorrules`.
     - **VS Code Copilot:** Installs globally by default into `~/.copilot/instructions`, `~/.copilot/skills`, `~/.copilot/agents`, and `~/.copilot/hooks`, and patches `chat.hookFilesLocations` in VS Code user settings, or into `.github/*` with repo scope.
     - **Codex:** Installs into `AGENTS.md`, `.agents/skills`, and `.codex/agents`.
+    - **Kilo Code:** Installs into `AGENTS.md`, `.kilo/skills`, `.kilo/commands`, `.kilo/agents`, and `kilo.jsonc`, or into `~/.config/kilo` and `~/.kilo/skills` with user scope.
     - **Gemini CLI:** Installs into `GEMINI.md` and `.gemini/commands` or `~/.gemini/commands`.
     - **Claude / OpenCode / Antigravity:** Installs skills and agents into their native paths, including `.opencode/...` project paths for OpenCode.
 
@@ -22,6 +23,7 @@ It is designed to be **IDE-Agnostic** and now ships with one unified installer e
 - `install_agent_env.py`: The backend used by the installer entrypoints.
 - `setup_agent_env.py`: Classic IDE installer backend.
 - `setup_codex_env.py`: Codex installer backend.
+- `setup_kilo_env.py`: Kilo Code installer backend.
 - `setup_gemini_env.py`: Gemini CLI installer backend.
 
 ## 📦 Install via npm
@@ -80,8 +82,10 @@ npx guide-for-ai --target claude
    ./install.sh --vscode-settings /path/to/settings.json
    ./install.sh --opencode-scope repo
    ./install.sh --codex-scope repo
+   ./install.sh --kilo-scope repo
    ./install.sh --targets codex,claude
    ./install.sh --target codex
+   ./install.sh --target kilo
    ./install.sh --target gemini
    ./install.sh --target gemini --gemini-scope repo
    ./install.sh --target claude
@@ -94,21 +98,25 @@ npx guide-for-ai --target claude
    install.bat --vscode-settings C:\path\to\settings.json
    install.bat --opencode-scope repo
    install.bat --codex-scope repo
+   install.bat --kilo-scope repo
    install.bat --targets codex,claude
    install.bat --target codex
+   install.bat --target kilo
    install.bat --target gemini
    install.bat --target gemini --gemini-scope repo
    install.bat --target claude
    ```
 
 5. **Target selection with `--targets`:**
-   - supported values: `cursor`, `vscode`, `claude`, `opencode`, `antigravity`, `codex`, `gemini`
+   - supported values: `cursor`, `vscode`, `claude`, `opencode`, `antigravity`, `codex`, `kilo`, `gemini`
    - use `all` or omit the flag to install everything
    - `--target codex` is accepted as a shortcut for a single target
+   - `--target kilo` is accepted as a shortcut for a single target
    - `--target gemini` is accepted as a shortcut for a single target
    - example:
    ```bash
    ./install.sh --targets codex
+   ./install.sh --targets kilo
    ./install.sh --targets gemini
    ./install.sh --targets cursor,vscode
    ./install.sh --targets claude,opencode,antigravity
@@ -148,7 +156,23 @@ npx guide-for-ai --target claude
      - `~/.gemini/GEMINI.md`
      - `~/.gemini/commands`
 
-9. **Reload your IDE / CLI session.** Your AI Agent is now fully updated with the latest protocols!
+9. **Kilo Code global vs local:**
+   - `--target kilo` installs only Kilo Code assets
+   - default Kilo install mode is global user scope
+   - `--kilo-scope repo` writes into the current repository:
+     - `AGENTS.md`
+     - `.kilo/kilo.jsonc`
+     - `.kilo/skills/<skill>/SKILL.md`
+     - `.kilo/commands/<command>.md`
+     - `.kilo/agents/*.md`
+   - `--kilo-scope user` writes into your user profile instead:
+     - `~/.config/kilo/AGENTS.md`
+     - `~/.config/kilo/kilo.jsonc`
+     - `~/.config/kilo/commands/*.md`
+     - `~/.config/kilo/agents/*.md`
+     - `~/.kilo/skills/<skill>/SKILL.md`
+
+10. **Reload your IDE / CLI session.** Your AI Agent is now fully updated with the latest protocols!
 
 ## Claude Code Notes
 - Claude installs now also configure a 3-line persistent session status bar at the bottom of the Claude Code terminal by default, as well as desktop notification hooks for when tasks complete or need input.
@@ -195,3 +219,11 @@ npx guide-for-ai --target claude
   - `workflows/*` -> `/workflows:*`
   - `subagents/*` -> `/agents:*`
 - `continuous-learning-v2` is skipped because Gemini CLI docs expose custom commands and context files as the documented extension surface, not hook-based skills.
+
+## Kilo Code Notes
+- Kilo docs use `AGENTS.md` for top-level instructions, `.kilo/skills/<name>/SKILL.md` for skills, `.kilo/commands/*.md` for workflows/slash commands, and `.kilo/agents/*.md` for custom subagents.
+- Global Kilo config lives at `~/.config/kilo/kilo.jsonc`; global skills live at `~/.kilo/skills`.
+- This installer maps top-level `skills/*.md` into Kilo skill folders and maps `workflows/*.md` into Kilo slash-command markdown files.
+- Subagents are converted into Kilo-compatible markdown agents with `mode: subagent` and translated tool permissions.
+- `continuous-learning-v2` is skipped by default because current Kilo docs do not document an equivalent hook/runtime surface for that skill.
+- In dedupe mode, Kilo reuses shared repo `AGENTS.md` when appropriate and can reuse Codex `.agents/skills` instead of installing duplicate common skills.
