@@ -17,6 +17,7 @@
     "install_agent_env.py",
     "setup_agent_env.py",
     "setup_codex_env.py",
+    "setup_kilo_env.py",
     "setup_gemini_env.py",
     "README.md"
   ],
